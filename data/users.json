@@ -1,0 +1,11 @@
+{
+  "users": [
+    {
+      "id": "b5417857-fc83-469b-82cd-101b09708da8",
+      "name": "Pavan Durga Nivas",
+      "email": "demo.admin@example.com",
+      "passwordHash": "ddd2a0985c1b22687d8fef9fee56129a:54a529ea01930aefd6c4d45327fd627988909a5e8e94e515d00bc59503a8eb3925b61a5a13f85a33ef40c046b31b932a75f03ff90f2cb52e1037a5e8b2af30d3",
+      "createdAt": "2025-11-20T08:15:37.148Z"
+    }
+  ]
+}
