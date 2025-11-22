@@ -4,8 +4,9 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Button } from "@/components/ui/Button"
-import { Search, Menu, LogOut, Loader2 } from "lucide-react"
+import { Search, Menu, LogOut, Loader2, Moon, Sun, UserRound } from "lucide-react"
 import { useAuth } from "@/components/providers/AuthProvider"
+import { useTheme } from "@/components/providers/ThemeProvider"
 
 const links = [
   { href: "/discovery", label: "Discovery", auth: false },
@@ -17,6 +18,7 @@ const links = [
 export function Navbar() {
   const router = useRouter()
   const { user, setUser } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const handleSignOut = async () => {
@@ -56,7 +58,16 @@ export function Navbar() {
             ))}
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle theme"
+            onClick={toggleTheme}
+            className="border border-transparent hover:border-border"
+          >
+            {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+          </Button>
           <div className="hidden md:flex items-center gap-3">
             {isAuthenticated ? (
               <>
@@ -64,6 +75,11 @@ export function Navbar() {
                   <p className="text-sm font-semibold leading-tight">{user?.name}</p>
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/profile">
+                    <UserRound className="mr-2 h-4 w-4" /> Profile
+                  </Link>
+                </Button>
                 <Button variant="outline" size="sm" asChild>
                   <Link href="/dashboard">Dashboard</Link>
                 </Button>
@@ -83,6 +99,14 @@ export function Navbar() {
               </>
             )}
           </div>
+          {isAuthenticated && (
+            <Button variant="ghost" size="icon" className="md:hidden" asChild>
+              <Link href="/profile">
+                <UserRound className="h-5 w-5" />
+                <span className="sr-only">Profile</span>
+              </Link>
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="md:hidden" asChild>
             <Link href={isAuthenticated ? "/dashboard" : "/login"}>
               <Menu className="h-5 w-5" />

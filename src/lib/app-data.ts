@@ -1,12 +1,42 @@
 import { randomUUID } from "node:crypto"
-import { CollaboratorInvite, SavedPaper, StoredDocument } from "@/types"
+import { CollaboratorAccess, CollaboratorInvite, DocumentPermission, SavedPaper, StoredDocument } from "@/types"
 import { readStore, writeStore } from "@/lib/data-store"
 
-export async function getUserDocuments(userId: string) {
+export async function getDocumentById(documentId: string) {
   const store = await readStore("appData")
-  return store.documents
-    .filter((doc) => doc.userId === userId)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  return store.documents.find((doc) => doc.id === documentId) ?? null
+}
+
+export async function getAccessibleDocuments(userId: string, email: string) {
+  const store = await readStore("appData")
+  const owned = store.documents.map((doc) => ({
+    ...doc,
+    permission: "owner" as DocumentPermission,
+  }))
+
+  const collabEntries = store.collaboratorAccess.filter(
+    (access) => (access.userId && access.userId === userId) || (access.email && access.email === email),
+  )
+
+  const collabDocuments = collabEntries
+    .map((entry) => {
+      const doc = store.documents.find((d) => d.id === entry.documentId)
+      if (!doc) return null
+      return {
+        ...doc,
+        permission: entry.permission as DocumentPermission,
+      }
+    })
+    .filter((item): item is StoredDocument & { permission: DocumentPermission } => Boolean(item))
+
+  const mergedMap = new Map<string, StoredDocument & { permission: DocumentPermission }>()
+  for (const doc of [...owned, ...collabDocuments]) {
+    mergedMap.set(doc.id, doc)
+  }
+
+  return Array.from(mergedMap.values()).sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  )
 }
 
 export async function upsertDocument(userId: string, payload: { id?: string; title: string; content: string }) {
@@ -14,7 +44,7 @@ export async function upsertDocument(userId: string, payload: { id?: string; tit
   const now = new Date().toISOString()
 
   if (payload.id) {
-    const index = store.documents.findIndex((doc) => doc.id === payload.id && doc.userId === userId)
+    const index = store.documents.findIndex((doc) => doc.id === payload.id)
     if (index >= 0) {
       store.documents[index] = {
         ...store.documents[index],
@@ -50,6 +80,80 @@ export async function deleteDocument(userId: string, documentId: string) {
     await writeStore("appData", store)
   }
   return removed
+}
+
+export async function setCollaboratorAccess(params: {
+  documentId: string
+  userId?: string
+  email?: string
+  permission: CollaboratorAccess["permission"]
+}) {
+  const store = await readStore("appData")
+  const now = new Date().toISOString()
+  const normalizedEmail = params.email?.trim().toLowerCase()
+
+  const existingIndex = store.collaboratorAccess.findIndex(
+    (entry) =>
+      entry.documentId === params.documentId &&
+      ((params.userId && entry.userId === params.userId) || (normalizedEmail && entry.email === normalizedEmail)),
+  )
+
+  if (existingIndex >= 0) {
+    store.collaboratorAccess[existingIndex] = {
+      ...store.collaboratorAccess[existingIndex],
+      permission: params.permission,
+      email: normalizedEmail ?? store.collaboratorAccess[existingIndex].email,
+      userId: params.userId ?? store.collaboratorAccess[existingIndex].userId,
+    }
+  } else {
+    store.collaboratorAccess.push({
+      id: randomUUID(),
+      documentId: params.documentId,
+      userId: params.userId,
+      email: normalizedEmail,
+      permission: params.permission,
+      addedAt: now,
+    })
+  }
+
+  await writeStore("appData", store)
+}
+
+export async function removeCollaboratorAccess(params: { documentId: string; userId?: string; email?: string }) {
+  const store = await readStore("appData")
+  const normalizedEmail = params.email?.trim().toLowerCase()
+  const before = store.collaboratorAccess.length
+  store.collaboratorAccess = store.collaboratorAccess.filter((entry) => {
+    if (entry.documentId !== params.documentId) return true
+    if (params.userId && entry.userId === params.userId) return false
+    if (normalizedEmail && entry.email === normalizedEmail) return false
+    return true
+  })
+  const removed = before !== store.collaboratorAccess.length
+  if (removed) {
+    await writeStore("appData", store)
+  }
+  return removed
+}
+
+export async function listCollaboratorAccess(documentId: string) {
+  const store = await readStore("appData")
+  return store.collaboratorAccess.filter((entry) => entry.documentId === documentId)
+}
+
+export async function getUserDocumentPermission(userId: string, email: string, documentId: string): Promise<DocumentPermission | null> {
+  const store = await readStore("appData")
+  const document = store.documents.find((doc) => doc.id === documentId)
+  if (!document) return null
+  if (document.userId === userId) return "owner"
+
+  const match = store.collaboratorAccess.find(
+    (entry) =>
+      entry.documentId === documentId &&
+      ((entry.userId && entry.userId === userId) || (entry.email && entry.email === email)),
+  )
+  if (!match) return null
+  return match.permission
 }
 
 export async function getSavedPapers(userId: string) {
@@ -111,8 +215,8 @@ export async function removeSavedPaper(userId: string, paperId: string) {
   return removed
 }
 
-export async function getDashboardSnapshot(userId: string) {
-  const [documents, savedPapers] = await Promise.all([getUserDocuments(userId), getSavedPapers(userId)])
+export async function getDashboardSnapshot(userId: string, email: string) {
+  const [documents, savedPapers] = await Promise.all([getAccessibleDocuments(userId, email), getSavedPapers(userId)])
   const recentActivity = [
     ...documents.map((doc) => ({
       id: doc.id,
@@ -146,6 +250,8 @@ export async function addCollaboratorInvite(params: {
   documentId: string
   inviterId: string
   inviteeEmail: string
+  inviteeId?: string
+  permission?: CollaboratorInvite["permission"]
   status: CollaboratorInvite["status"]
   deliveryMessage?: string
 }) {
@@ -155,6 +261,8 @@ export async function addCollaboratorInvite(params: {
     documentId: params.documentId,
     inviterId: params.inviterId,
     inviteeEmail: params.inviteeEmail,
+    inviteeId: params.inviteeId,
+    permission: params.permission ?? "edit",
     status: params.status,
     deliveryMessage: params.deliveryMessage,
     createdAt: new Date().toISOString(),

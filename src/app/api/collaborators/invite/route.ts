@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server"
-import { getSessionUser } from "@/lib/auth"
-import { addCollaboratorInvite } from "@/lib/app-data"
+import { getSessionUser, getUserById } from "@/lib/auth"
+import { addCollaboratorInvite, setCollaboratorAccess } from "@/lib/app-data"
 
 interface InviteRequest {
-  email: string
+  email?: string
+  accountId?: string
   documentId: string
   documentTitle?: string
   shareUrl?: string
+  permission?: "view" | "edit"
 }
 
 async function sendEmailInvite(params: { email: string; fromName: string; documentTitle: string; link: string }) {
@@ -47,8 +49,26 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as InviteRequest
-  if (!body.email || !body.documentId) {
-    return NextResponse.json({ error: "Email and documentId are required." }, { status: 400 })
+  if (!body.documentId) {
+    return NextResponse.json({ error: "documentId is required." }, { status: 400 })
+  }
+
+  const permission = body.permission === "view" ? "view" : "edit"
+
+  let inviteEmail = body.email?.trim().toLowerCase()
+  let inviteeId: string | undefined
+
+  if (!inviteEmail && body.accountId) {
+    const target = await getUserById(body.accountId.trim())
+    if (!target) {
+      return NextResponse.json({ error: "Account ID not found." }, { status: 404 })
+    }
+    inviteeId = target.id
+    inviteEmail = target.email
+  }
+
+  if (!inviteEmail) {
+    return NextResponse.json({ error: "Email or accountId is required." }, { status: 400 })
   }
 
   const shareUrl =
@@ -56,7 +76,7 @@ export async function POST(request: Request) {
     `${process.env.APP_URL ?? "http://localhost:3000"}/editor?doc=${encodeURIComponent(body.documentId)}`
 
   const emailResult = await sendEmailInvite({
-    email: body.email,
+    email: inviteEmail,
     fromName: user.name,
     documentTitle: body.documentTitle ?? "Research document",
     link: shareUrl,
@@ -65,13 +85,23 @@ export async function POST(request: Request) {
   const invite = await addCollaboratorInvite({
     documentId: body.documentId,
     inviterId: user.id,
-    inviteeEmail: body.email,
+    inviteeEmail: inviteEmail,
+    inviteeId,
+    permission,
     status: emailResult.delivered ? "sent" : "pending",
     deliveryMessage: emailResult.message,
+  })
+
+  await setCollaboratorAccess({
+    documentId: body.documentId,
+    userId: inviteeId,
+    email: inviteEmail,
+    permission,
   })
 
   return NextResponse.json({
     invite,
     delivery: emailResult,
+    invitee: inviteeId ? { id: inviteeId, email: inviteEmail } : undefined,
   })
 }

@@ -7,7 +7,7 @@ import { requireSessionUser } from "@/lib/auth"
 
 export default async function DashboardPage() {
   const user = await requireSessionUser()
-  const snapshot = await getDashboardSnapshot(user.id)
+  const snapshot = await getDashboardSnapshot(user.id, user.email)
 
   const metrics = [
     {

@@ -4,6 +4,11 @@ export interface StoredUser {
   email: string
   passwordHash: string
   createdAt: string
+  bio?: string
+  institution?: string
+  role?: string
+  website?: string
+  orcid?: string
 }
 
 export type SessionUser = Omit<StoredUser, "passwordHash">
@@ -36,8 +41,21 @@ export interface CollaboratorInvite {
   documentId: string
   inviterId: string
   inviteeEmail: string
+  inviteeId?: string
+  permission?: "view" | "edit"
   status: "pending" | "sent" | "failed"
   createdAt: string
   updatedAt: string
   deliveryMessage?: string
 }
+
+export interface CollaboratorAccess {
+  id: string
+  documentId: string
+  userId?: string
+  email?: string
+  permission: "view" | "edit"
+  addedAt: string
+}
+
+export type DocumentPermission = "owner" | "edit" | "view"

@@ -112,4 +112,42 @@ export async function getUserById(id: string) {
   return usersStore.users.find((user) => user.id === id) ?? null
 }
 
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<Pick<StoredUser, "name" | "email" | "bio" | "institution" | "role" | "website" | "orcid">>,
+) {
+  const usersStore = await readStore("users")
+  const index = usersStore.users.findIndex((user) => user.id === userId)
+  if (index < 0) {
+    throw new Error("User not found.")
+  }
+
+  const normalizedEmail = updates.email
+    ? updates.email.trim().toLowerCase()
+    : usersStore.users[index].email
+
+  const emailChanged = normalizedEmail !== usersStore.users[index].email
+  if (emailChanged && usersStore.users.some((user, idx) => idx !== index && user.email === normalizedEmail)) {
+    throw new Error("That email is already in use.")
+  }
+
+  const updatedUser: StoredUser = {
+    ...usersStore.users[index],
+    ...updates,
+    email: normalizedEmail,
+    name: (updates.name ?? usersStore.users[index].name).trim() || usersStore.users[index].name,
+    bio: updates.bio ?? usersStore.users[index].bio,
+    institution: updates.institution ?? usersStore.users[index].institution,
+    role: updates.role ?? usersStore.users[index].role,
+    website: updates.website ?? usersStore.users[index].website,
+    orcid: updates.orcid ?? usersStore.users[index].orcid,
+  }
+
+  usersStore.users[index] = updatedUser
+  await writeStore("users", usersStore)
+
+  const token = createSessionToken({ userId: updatedUser.id, email: updatedUser.email })
+  return { user: sanitizeUser(updatedUser), token }
+}
+
 export { AUTH_COOKIE_NAME } from "@/lib/constants"

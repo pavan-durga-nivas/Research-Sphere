@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { AUTH_COOKIE_NAME } from "@/lib/constants"
 
-const PROTECTED_PATHS = ["/dashboard", "/editor", "/library", "/validation"]
+const PROTECTED_PATHS = ["/dashboard", "/editor", "/library", "/validation", "/profile"]
 const AUTH_ROUTES = ["/login", "/register"]
 
 export function middleware(request: NextRequest) {
@@ -32,6 +32,7 @@ export const config = {
     "/editor/:path*",
     "/library/:path*",
     "/validation/:path*",
+    "/profile/:path*",
     "/login",
     "/register",
   ],

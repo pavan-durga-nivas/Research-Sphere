@@ -1,17 +1,22 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { CollaboratorInvite, SavedPaper, StoredDocument, StoredUser } from "@/types"
+import { CollaboratorAccess, CollaboratorInvite, SavedPaper, StoredDocument, StoredUser } from "@/types"
 
 type DataFile = "users" | "appData"
 
 type StoreShape = {
   users: { users: StoredUser[] }
-  appData: { documents: StoredDocument[]; savedPapers: SavedPaper[]; collaboratorInvites: CollaboratorInvite[] }
+  appData: {
+    documents: StoredDocument[]
+    savedPapers: SavedPaper[]
+    collaboratorInvites: CollaboratorInvite[]
+    collaboratorAccess: CollaboratorAccess[]
+  }
 }
 
 const defaultData: StoreShape = {
   users: { users: [] },
-  appData: { documents: [], savedPapers: [], collaboratorInvites: [] },
+  appData: { documents: [], savedPapers: [], collaboratorInvites: [], collaboratorAccess: [] },
 }
 
 const dataDirectory = path.join(process.cwd(), "data")
@@ -31,7 +36,21 @@ export async function readStore<T extends DataFile>(file: T): Promise<StoreShape
   const filePath = await ensureDataFile(file)
   try {
     const raw = await readFile(filePath, "utf8")
-    return JSON.parse(raw) as StoreShape[T]
+    const parsed = JSON.parse(raw) as StoreShape[T]
+    if (file === "appData") {
+      const appData = parsed as StoreShape["appData"]
+      return {
+        documents: appData.documents ?? [],
+        savedPapers: appData.savedPapers ?? [],
+        collaboratorInvites: appData.collaboratorInvites ?? [],
+        collaboratorAccess: appData.collaboratorAccess ?? [],
+      } as StoreShape[T]
+    }
+    if (file === "users") {
+      const usersData = parsed as StoreShape["users"]
+      return { users: usersData.users ?? [] } as StoreShape[T]
+    }
+    return parsed
   } catch (error) {
     console.error(`Failed to read ${file} store`, error)
     return structuredClone(defaultData[file]) as StoreShape[T]
