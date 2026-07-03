@@ -1,59 +1,65 @@
 import { randomUUID } from "node:crypto"
-import { CollaboratorAccess, CollaboratorInvite, DocumentPermission, SavedPaper, StoredDocument } from "@/types"
-import { readStore, writeStore } from "@/lib/data-store"
+import {
+  CollaboratorAccess,
+  CollaboratorInvite,
+  DocumentPermission,
+  SavedPaper,
+  StoredDocument,
+} from "@/types"
+import { getCollection } from "@/lib/mongo"
+
+const sortByUpdatedDesc = <T extends { updatedAt: string }>(items: T[]) =>
+  items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
 
 export async function getDocumentById(documentId: string) {
-  const store = await readStore("appData")
-  return store.documents.find((doc) => doc.id === documentId) ?? null
+  const documents = await getCollection<StoredDocument>("documents")
+  return documents.findOne({ id: documentId })
 }
 
 export async function getAccessibleDocuments(userId: string, email: string) {
-  const store = await readStore("appData")
-  const owned = store.documents.map((doc) => ({
-    ...doc,
-    permission: "owner" as DocumentPermission,
-  }))
+  const documents = await getCollection<StoredDocument>("documents")
+  const collabAccess = await getCollection<CollaboratorAccess>("collaboratorAccess")
 
-  const collabEntries = store.collaboratorAccess.filter(
-    (access) => (access.userId && access.userId === userId) || (access.email && access.email === email),
-  )
-
-  const collabDocuments = collabEntries
-    .map((entry) => {
-      const doc = store.documents.find((d) => d.id === entry.documentId)
-      if (!doc) return null
-      return {
-        ...doc,
-        permission: entry.permission as DocumentPermission,
-      }
+  const collabEntries = await collabAccess
+    .find({
+      $or: [{ userId }, { email }],
     })
-    .filter((item): item is StoredDocument & { permission: DocumentPermission } => Boolean(item))
+    .toArray()
 
-  const mergedMap = new Map<string, StoredDocument & { permission: DocumentPermission }>()
-  for (const doc of [...owned, ...collabDocuments]) {
-    mergedMap.set(doc.id, doc)
-  }
+  const collabDocIds = collabEntries.map((entry) => entry.documentId)
 
-  return Array.from(mergedMap.values()).sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  )
+  const docs = await documents
+    .find({
+      $or: [{ userId }, ...(collabDocIds.length > 0 ? [{ id: { $in: collabDocIds } }] : [])],
+    })
+    .toArray()
+
+  const result: (StoredDocument & { permission: DocumentPermission })[] = docs.map((doc) => {
+    if (doc.userId === userId) {
+      return { ...doc, permission: "owner" }
+    }
+    const match = collabEntries.find((entry) => entry.documentId === doc.id)
+    return { ...doc, permission: match?.permission ?? "view" }
+  })
+
+  return sortByUpdatedDesc(result)
 }
 
 export async function upsertDocument(userId: string, payload: { id?: string; title: string; content: string }) {
-  const store = await readStore("appData")
+  const documents = await getCollection<StoredDocument>("documents")
   const now = new Date().toISOString()
 
   if (payload.id) {
-    const index = store.documents.findIndex((doc) => doc.id === payload.id)
-    if (index >= 0) {
-      store.documents[index] = {
-        ...store.documents[index],
+    const existing = await documents.findOne({ id: payload.id })
+    if (existing) {
+      const updated: StoredDocument = {
+        ...existing,
         title: payload.title,
         content: payload.content,
         updatedAt: now,
       }
-      await writeStore("appData", store)
-      return store.documents[index]
+      await documents.updateOne({ id: payload.id }, { $set: updated })
+      return updated
     }
   }
 
@@ -66,20 +72,14 @@ export async function upsertDocument(userId: string, payload: { id?: string; tit
     updatedAt: now,
   }
 
-  store.documents.push(newDocument)
-  await writeStore("appData", store)
+  await documents.insertOne(newDocument)
   return newDocument
 }
 
 export async function deleteDocument(userId: string, documentId: string) {
-  const store = await readStore("appData")
-  const before = store.documents.length
-  store.documents = store.documents.filter((doc) => !(doc.id === documentId && doc.userId === userId))
-  const removed = before !== store.documents.length
-  if (removed) {
-    await writeStore("appData", store)
-  }
-  return removed
+  const documents = await getCollection<StoredDocument>("documents")
+  const result = await documents.deleteOne({ id: documentId, userId })
+  return result.deletedCount > 0
 }
 
 export async function setCollaboratorAccess(params: {
@@ -88,79 +88,75 @@ export async function setCollaboratorAccess(params: {
   email?: string
   permission: CollaboratorAccess["permission"]
 }) {
-  const store = await readStore("appData")
-  const now = new Date().toISOString()
+  const collabAccess = await getCollection<CollaboratorAccess>("collaboratorAccess")
   const normalizedEmail = params.email?.trim().toLowerCase()
 
-  const existingIndex = store.collaboratorAccess.findIndex(
-    (entry) =>
-      entry.documentId === params.documentId &&
-      ((params.userId && entry.userId === params.userId) || (normalizedEmail && entry.email === normalizedEmail)),
-  )
-
-  if (existingIndex >= 0) {
-    store.collaboratorAccess[existingIndex] = {
-      ...store.collaboratorAccess[existingIndex],
-      permission: params.permission,
-      email: normalizedEmail ?? store.collaboratorAccess[existingIndex].email,
-      userId: params.userId ?? store.collaboratorAccess[existingIndex].userId,
-    }
-  } else {
-    store.collaboratorAccess.push({
-      id: randomUUID(),
-      documentId: params.documentId,
-      userId: params.userId,
-      email: normalizedEmail,
-      permission: params.permission,
-      addedAt: now,
-    })
+  const filter: { documentId: string; userId?: string; email?: string } = { documentId: params.documentId }
+  if (params.userId) {
+    filter.userId = params.userId
+  } else if (normalizedEmail) {
+    filter.email = normalizedEmail
   }
 
-  await writeStore("appData", store)
+  const collaboratorId = params.userId
+    ? `${params.documentId}:${params.userId}`
+    : normalizedEmail
+      ? `${params.documentId}:${normalizedEmail}`
+      : randomUUID()
+
+  await collabAccess.updateOne(
+    filter,
+    {
+      $set: {
+        id: collaboratorId,
+        documentId: params.documentId,
+        userId: params.userId,
+        email: normalizedEmail,
+        permission: params.permission,
+      },
+      $setOnInsert: {
+        addedAt: new Date().toISOString(),
+      },
+    },
+    { upsert: true },
+  )
 }
 
 export async function removeCollaboratorAccess(params: { documentId: string; userId?: string; email?: string }) {
-  const store = await readStore("appData")
+  const collabAccess = await getCollection<CollaboratorAccess>("collaboratorAccess")
   const normalizedEmail = params.email?.trim().toLowerCase()
-  const before = store.collaboratorAccess.length
-  store.collaboratorAccess = store.collaboratorAccess.filter((entry) => {
-    if (entry.documentId !== params.documentId) return true
-    if (params.userId && entry.userId === params.userId) return false
-    if (normalizedEmail && entry.email === normalizedEmail) return false
-    return true
+  const result = await collabAccess.deleteOne({
+    documentId: params.documentId,
+    ...(params.userId ? { userId: params.userId } : {}),
+    ...(normalizedEmail ? { email: normalizedEmail } : {}),
   })
-  const removed = before !== store.collaboratorAccess.length
-  if (removed) {
-    await writeStore("appData", store)
-  }
-  return removed
+  return result.deletedCount > 0
 }
 
 export async function listCollaboratorAccess(documentId: string) {
-  const store = await readStore("appData")
-  return store.collaboratorAccess.filter((entry) => entry.documentId === documentId)
+  const collabAccess = await getCollection<CollaboratorAccess>("collaboratorAccess")
+  return collabAccess.find({ documentId }).toArray()
 }
 
 export async function getUserDocumentPermission(userId: string, email: string, documentId: string): Promise<DocumentPermission | null> {
-  const store = await readStore("appData")
-  const document = store.documents.find((doc) => doc.id === documentId)
+  const documents = await getCollection<StoredDocument>("documents")
+  const collabAccess = await getCollection<CollaboratorAccess>("collaboratorAccess")
+
+  const document = await documents.findOne({ id: documentId })
   if (!document) return null
   if (document.userId === userId) return "owner"
 
-  const match = store.collaboratorAccess.find(
-    (entry) =>
-      entry.documentId === documentId &&
-      ((entry.userId && entry.userId === userId) || (entry.email && entry.email === email)),
-  )
+  const match = await collabAccess.findOne({
+    documentId,
+    $or: [{ userId }, { email }],
+  })
   if (!match) return null
   return match.permission
 }
 
 export async function getSavedPapers(userId: string) {
-  const store = await readStore("appData")
-  return store.savedPapers
-    .filter((paper) => paper.userId === userId)
-    .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+  const savedPapers = await getCollection<SavedPaper>("savedPapers")
+  return savedPapers.find({ userId }).sort({ addedAt: -1 }).toArray()
 }
 
 interface PaperPayload {
@@ -175,21 +171,8 @@ interface PaperPayload {
 }
 
 export async function savePaper(userId: string, payload: PaperPayload) {
-  const store = await readStore("appData")
-  const existingIndex = store.savedPapers.findIndex(
-    (paper) => paper.paperId === payload.paperId && paper.userId === userId,
-  )
+  const savedPapers = await getCollection<SavedPaper>("savedPapers")
   const now = new Date().toISOString()
-
-  if (existingIndex >= 0) {
-    store.savedPapers[existingIndex] = {
-      ...store.savedPapers[existingIndex],
-      ...payload,
-      addedAt: now,
-    }
-    await writeStore("appData", store)
-    return store.savedPapers[existingIndex]
-  }
 
   const newPaper: SavedPaper = {
     id: randomUUID(),
@@ -197,22 +180,20 @@ export async function savePaper(userId: string, payload: PaperPayload) {
     addedAt: now,
     ...payload,
   }
-  store.savedPapers.push(newPaper)
-  await writeStore("appData", store)
+
+  await savedPapers.updateOne(
+    { userId, paperId: payload.paperId },
+    { $set: { ...newPaper, addedAt: now } },
+    { upsert: true },
+  )
+
   return newPaper
 }
 
 export async function removeSavedPaper(userId: string, paperId: string) {
-  const store = await readStore("appData")
-  const before = store.savedPapers.length
-  store.savedPapers = store.savedPapers.filter(
-    (paper) => !(paper.paperId === paperId && paper.userId === userId),
-  )
-  const removed = before !== store.savedPapers.length
-  if (removed) {
-    await writeStore("appData", store)
-  }
-  return removed
+  const savedPapers = await getCollection<SavedPaper>("savedPapers")
+  const result = await savedPapers.deleteOne({ userId, paperId })
+  return result.deletedCount > 0
 }
 
 export async function getDashboardSnapshot(userId: string, email: string) {
@@ -255,7 +236,7 @@ export async function addCollaboratorInvite(params: {
   status: CollaboratorInvite["status"]
   deliveryMessage?: string
 }) {
-  const store = await readStore("appData")
+  const invites = await getCollection<CollaboratorInvite>("collaboratorInvites")
   const invite: CollaboratorInvite = {
     id: randomUUID(),
     documentId: params.documentId,
@@ -268,12 +249,11 @@ export async function addCollaboratorInvite(params: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
-  store.collaboratorInvites.push(invite)
-  await writeStore("appData", store)
+  await invites.insertOne(invite)
   return invite
 }
 
 export async function listCollaboratorInvites(documentId: string) {
-  const store = await readStore("appData")
-  return store.collaboratorInvites.filter((invite) => invite.documentId === documentId)
+  const invites = await getCollection<CollaboratorInvite>("collaboratorInvites")
+  return invites.find({ documentId }).toArray()
 }

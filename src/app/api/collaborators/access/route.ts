@@ -32,11 +32,17 @@ export async function GET(request: Request) {
   }
 
   const accessList = await listCollaboratorAccess(documentId)
-  const collaborators = await Promise.all(
+  const collaboratorsWithProfiles = await Promise.all(
     accessList.map(async (access) => {
       const profile = access.userId ? await getUserById(access.userId) : null
+      const mongoId = (access as { _id?: unknown })._id
+      const collaboratorId =
+        access.id ||
+        access.userId ||
+        access.email ||
+        (mongoId ? String(mongoId) : `${access.documentId}:${access.permission}`)
       return {
-        id: access.id,
+        id: collaboratorId,
         userId: access.userId,
         email: access.email ?? profile?.email,
         name: profile?.name ?? "Pending collaborator",
@@ -45,6 +51,13 @@ export async function GET(request: Request) {
       }
     }),
   )
+
+  const seen = new Set<string>()
+  const collaborators = collaboratorsWithProfiles.filter((collaborator) => {
+    if (seen.has(collaborator.id)) return false
+    seen.add(collaborator.id)
+    return true
+  })
 
   return NextResponse.json({ collaborators })
 }

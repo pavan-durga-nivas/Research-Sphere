@@ -18,6 +18,7 @@ export default function ValidationPage() {
   const [textInput, setTextInput] = useState("")
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [isExtracting, setIsExtracting] = useState(false)
   const [result, setResult] = useState<ValidationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -30,23 +31,56 @@ export default function ValidationPage() {
       return
     }
 
-    try {
-      const reader = new FileReader()
-      reader.onload = (loadEvent) => {
-        const text = loadEvent.target?.result
-        if (typeof text === "string") {
-          setTextInput(text)
-          setSelectedFile(file.name)
-          setError(null)
-        } else {
-          setError("Unable to read this file. Try a plain text version.")
+    setResult(null)
+    setError(null)
+
+    const lowerName = file.name.toLowerCase()
+    const isDoc = lowerName.endsWith(".doc") || lowerName.endsWith(".docx")
+    const isPdf = lowerName.endsWith(".pdf")
+
+    if (isDoc || isPdf) {
+      setIsExtracting(true)
+      setError(null)
+      try {
+        const formData = new FormData()
+        formData.append("file", file)
+        const response = await fetch("/api/validation/extract", {
+          method: "POST",
+          body: formData,
+        })
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to read the document.")
         }
+        setTextInput(data.text || "")
+        setSelectedFile(file.name)
+      } catch (err) {
+        console.error(err)
+        setError(err instanceof Error ? err.message : "Failed to read the document.")
+      } finally {
+        setIsExtracting(false)
       }
-      reader.readAsText(file)
-    } catch (err) {
-      console.error(err)
-      setError("Failed to read the file contents.")
+    } else {
+      try {
+        const reader = new FileReader()
+        reader.onload = (loadEvent) => {
+          const text = loadEvent.target?.result
+          if (typeof text === "string") {
+            setTextInput(text)
+            setSelectedFile(file.name)
+            setError(null)
+          } else {
+            setError("Unable to read this file. Try a plain text version.")
+          }
+        }
+        reader.readAsText(file)
+      } catch (err) {
+        console.error(err)
+        setError("Failed to read the file contents.")
+      }
     }
+
+    event.target.value = ""
   }
 
   const handleValidation = async () => {
@@ -90,7 +124,7 @@ export default function ValidationPage() {
         <Card className="h-full">
           <CardHeader>
             <CardTitle>Upload or paste content</CardTitle>
-            <CardDescription>TXT, Markdown, or copied abstracts up to 20MB.</CardDescription>
+            <CardDescription>PDF, Word (docx), TXT, Markdown, or copied abstracts up to 20MB.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div
@@ -105,16 +139,20 @@ export default function ValidationPage() {
                   <p className="font-medium">
                     {selectedFile ? `Selected: ${selectedFile}` : "Drag & drop or click to browse"}
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">We convert the text locally before sending to AI.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Upload PDF/Word to extract text for editing before validation.
+                  </p>
                 </div>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,.tex,.json"
+                  accept=".txt,.md,.tex,.json,.pdf,.doc,.docx"
                   onChange={handleFileChange}
                   className="hidden"
                 />
-                <Button variant="outline">Select File</Button>
+                <Button variant="outline" disabled={isExtracting}>
+                  {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Select File"}
+                </Button>
               </div>
             </div>
 
@@ -130,10 +168,14 @@ export default function ValidationPage() {
 
             {error && <p className="text-sm text-red-400">{error}</p>}
 
-            <Button className="w-full h-12" onClick={handleValidation} disabled={isScanning}>
+            <Button className="w-full h-12" onClick={handleValidation} disabled={isScanning || isExtracting}>
               {isScanning ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analysing...
+                </>
+              ) : isExtracting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparing file...
                 </>
               ) : (
                 <>

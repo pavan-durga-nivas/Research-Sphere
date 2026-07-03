@@ -1,18 +1,19 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/auth"
 import { removeSavedPaper } from "@/lib/app-data"
 
 interface RouteParams {
-  params: { paperId: string }
+  params: Promise<{ paperId: string }>
 }
 
-export async function DELETE(_request: Request, { params }: RouteParams) {
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const user = await getSessionUser()
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const removed = await removeSavedPaper(user.id, params.paperId)
+  const { paperId } = await params
+  const removed = await removeSavedPaper(user.id, paperId)
   if (!removed) {
     return NextResponse.json({ error: "Paper not found." }, { status: 404 })
   }

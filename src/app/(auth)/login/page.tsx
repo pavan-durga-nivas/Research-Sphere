@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card"
 import { useAuth } from "@/components/providers/AuthProvider"
 import { Loader2, Lock } from "lucide-react"
+import { DEV_LOGIN_EMAIL, DEV_LOGIN_PASSWORD } from "@/lib/dev-credentials"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -86,6 +87,16 @@ export default function LoginPage() {
               Sign In
             </Button>
           </form>
+          {process.env.NODE_ENV !== "production" && (
+            <div className="mt-4 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
+              <p className="font-medium text-foreground">Local development login</p>
+              <p className="mt-1 text-muted-foreground">
+                Email: <code>{DEV_LOGIN_EMAIL}</code>
+                <br />
+                Password: <code>{DEV_LOGIN_PASSWORD}</code>
+              </p>
+            </div>
+          )}
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Need an account?{" "}
             <Link href="/register" className="text-primary hover:underline">

@@ -1,10 +1,17 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto"
-import { readStore, writeStore } from "@/lib/data-store"
 import { SessionUser, StoredUser } from "@/types"
 import { SESSION_TTL_SECONDS, createSessionToken, verifySessionToken } from "@/lib/session-token"
 import { AUTH_COOKIE_NAME } from "@/lib/constants"
+import {
+  DEV_LOGIN_EMAIL,
+  DEV_LOGIN_PASSWORD,
+  DEV_LOGIN_USER,
+  DEV_LOGIN_USER_ID,
+  isDevLoginEnabled,
+} from "@/lib/dev-credentials"
+import { getCollection } from "@/lib/mongo"
 
 const baseCookieConfig = {
   name: AUTH_COOKIE_NAME,
@@ -43,18 +50,19 @@ function verifyPassword(password: string, storedHash: string) {
   )
 }
 
-export function sanitizeUser(user: StoredUser): SessionUser {
-  const { passwordHash, ...rest } = user
+export function sanitizeUser(user: StoredUser & { _id?: unknown }): SessionUser {
+  const { passwordHash, _id, ...rest } = user
   void passwordHash
-  return rest
+  void _id
+  return { ...rest }
 }
 
 export async function registerUser(name: string, email: string, password: string) {
   const trimmedName = name.trim()
   const normalizedEmail = email.trim().toLowerCase()
-  const usersStore = await readStore("users")
-
-  if (usersStore.users.some((user) => user.email === normalizedEmail)) {
+  const users = await getCollection<StoredUser>("users")
+  const existing = await users.findOne({ email: normalizedEmail })
+  if (existing) {
     throw new Error("A user with this email already exists.")
   }
 
@@ -66,8 +74,7 @@ export async function registerUser(name: string, email: string, password: string
     createdAt: new Date().toISOString(),
   }
 
-  usersStore.users.push(newUser)
-  await writeStore("users", usersStore)
+  await users.insertOne(newUser)
 
   const token = createSessionToken({ userId: newUser.id, email: normalizedEmail })
   return { user: sanitizeUser(newUser), token }
@@ -75,8 +82,21 @@ export async function registerUser(name: string, email: string, password: string
 
 export async function authenticateUser(email: string, password: string) {
   const normalizedEmail = email.trim().toLowerCase()
-  const usersStore = await readStore("users")
-  const existingUser = usersStore.users.find((user) => user.email === normalizedEmail)
+
+  if (
+    isDevLoginEnabled() &&
+    normalizedEmail === DEV_LOGIN_EMAIL &&
+    password === DEV_LOGIN_PASSWORD
+  ) {
+    const token = createSessionToken({
+      userId: DEV_LOGIN_USER.id,
+      email: DEV_LOGIN_USER.email,
+    })
+    return { user: DEV_LOGIN_USER, token }
+  }
+
+  const users = await getCollection<StoredUser>("users")
+  const existingUser = await users.findOne({ email: normalizedEmail })
 
   if (!existingUser || !verifyPassword(password, existingUser.passwordHash)) {
     throw new Error("Invalid email or password.")
@@ -94,8 +114,12 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const payload = verifySessionToken(token)
   if (!payload) return null
 
-  const usersStore = await readStore("users")
-  const user = usersStore.users.find((item) => item.id === payload.userId)
+  if (isDevLoginEnabled() && payload.userId === DEV_LOGIN_USER_ID) {
+    return DEV_LOGIN_USER
+  }
+
+  const users = await getCollection<StoredUser>("users")
+  const user = await users.findOne({ id: payload.userId })
   return user ? sanitizeUser(user) : null
 }
 
@@ -108,43 +132,42 @@ export async function requireSessionUser() {
 }
 
 export async function getUserById(id: string) {
-  const usersStore = await readStore("users")
-  return usersStore.users.find((user) => user.id === id) ?? null
+  const users = await getCollection<StoredUser>("users")
+  return (await users.findOne({ id })) ?? null
 }
 
 export async function updateUserProfile(
   userId: string,
   updates: Partial<Pick<StoredUser, "name" | "email" | "bio" | "institution" | "role" | "website" | "orcid">>,
 ) {
-  const usersStore = await readStore("users")
-  const index = usersStore.users.findIndex((user) => user.id === userId)
-  if (index < 0) {
+  const users = await getCollection<StoredUser>("users")
+  const existing = await users.findOne({ id: userId })
+  if (!existing) {
     throw new Error("User not found.")
   }
 
-  const normalizedEmail = updates.email
-    ? updates.email.trim().toLowerCase()
-    : usersStore.users[index].email
-
-  const emailChanged = normalizedEmail !== usersStore.users[index].email
-  if (emailChanged && usersStore.users.some((user, idx) => idx !== index && user.email === normalizedEmail)) {
-    throw new Error("That email is already in use.")
+  const normalizedEmail = updates.email ? updates.email.trim().toLowerCase() : existing.email
+  const emailChanged = normalizedEmail !== existing.email
+  if (emailChanged) {
+    const emailConflict = await users.findOne({ email: normalizedEmail })
+    if (emailConflict && emailConflict.id !== userId) {
+      throw new Error("That email is already in use.")
+    }
   }
 
   const updatedUser: StoredUser = {
-    ...usersStore.users[index],
+    ...existing,
     ...updates,
     email: normalizedEmail,
-    name: (updates.name ?? usersStore.users[index].name).trim() || usersStore.users[index].name,
-    bio: updates.bio ?? usersStore.users[index].bio,
-    institution: updates.institution ?? usersStore.users[index].institution,
-    role: updates.role ?? usersStore.users[index].role,
-    website: updates.website ?? usersStore.users[index].website,
-    orcid: updates.orcid ?? usersStore.users[index].orcid,
+    name: (updates.name ?? existing.name).trim() || existing.name,
+    bio: updates.bio ?? existing.bio,
+    institution: updates.institution ?? existing.institution,
+    role: updates.role ?? existing.role,
+    website: updates.website ?? existing.website,
+    orcid: updates.orcid ?? existing.orcid,
   }
 
-  usersStore.users[index] = updatedUser
-  await writeStore("users", usersStore)
+  await users.updateOne({ id: userId }, { $set: updatedUser })
 
   const token = createSessionToken({ userId: updatedUser.id, email: updatedUser.email })
   return { user: sanitizeUser(updatedUser), token }

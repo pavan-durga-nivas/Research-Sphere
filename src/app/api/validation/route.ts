@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server"
 import { GeminiNotConfiguredError, generateWithGemini } from "@/lib/ai"
 import { getSessionUser } from "@/lib/auth"
-
-interface ValidationRequest {
-  text: string
-}
+import { extractTextFromFile } from "@/lib/text-extraction"
 
 const MAX_INPUT_LENGTH = 8000
 
@@ -14,7 +11,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { text } = (await request.json()) as ValidationRequest
+  const contentType = request.headers.get("content-type") ?? ""
+  let text = ""
+
+  try {
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData()
+      const file = formData.get("file")
+      const pasted = formData.get("text")
+      if (typeof pasted === "string" && pasted.trim()) {
+        text = pasted
+      } else if (file instanceof File) {
+        text = await extractTextFromFile(file)
+      }
+    } else {
+      const body = (await request.json().catch(() => null)) as { text?: string } | null
+      text = body?.text ?? ""
+    }
+  } catch (error) {
+    console.error("Unable to parse validation input", error)
+    return NextResponse.json({ error: "Invalid input. Please upload again." }, { status: 400 })
+  }
+
   if (!text || text.trim().length < 100) {
     return NextResponse.json({ error: "Provide at least 100 characters for analysis." }, { status: 400 })
   }
