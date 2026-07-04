@@ -212,5 +212,4 @@ Highlights of upcoming work:
 
 ## License
 
-No license file is currently included. Add a `LICENSE` to define usage terms
-before distributing.
+Licensed under the [Apache License 2.0](./LICENSE). Copyright © 2026 Pavan Durga Nivas.
