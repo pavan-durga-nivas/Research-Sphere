@@ -2,6 +2,19 @@
 
 import type { ChangeEvent } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useEditor, EditorContent, type Editor } from "@tiptap/react"
+import { StarterKit } from "@tiptap/starter-kit"
+import { Highlight } from "@tiptap/extension-highlight"
+import { Subscript as SubscriptExt } from "@tiptap/extension-subscript"
+import { Superscript as SuperscriptExt } from "@tiptap/extension-superscript"
+import { TextAlign } from "@tiptap/extension-text-align"
+import { Table } from "@tiptap/extension-table"
+import { TableRow } from "@tiptap/extension-table-row"
+import { TableCell } from "@tiptap/extension-table-cell"
+import { TableHeader } from "@tiptap/extension-table-header"
+import { Placeholder } from "@tiptap/extension-placeholder"
+import { ResizableImage } from "@/components/editor/extensions/resizable-image"
+import { Columns, Column } from "@/components/editor/extensions/columns"
 import { Button } from "@/components/ui/Button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"
 import { Input } from "@/components/ui/Input"
@@ -9,10 +22,24 @@ import {
   Bold,
   Italic,
   Underline,
+  Strikethrough,
   AlignLeft,
   AlignCenter,
   AlignRight,
+  AlignJustify,
   List,
+  ListOrdered,
+  Quote,
+  Code,
+  Heading1,
+  Heading2,
+  Heading3,
+  Pilcrow,
+  Minus,
+  Link2 as LinkIcon,
+  Columns2,
+  Columns3,
+  Rows3,
   Image as ImageIcon,
   ChevronDown,
   ChevronRight,
@@ -41,9 +68,11 @@ import {
   Redo2,
   Eraser,
   Table2,
+  Trash2,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react"
 import { useAuth } from "@/components/providers/AuthProvider"
-import type { LucideIcon } from "lucide-react"
 import type { StoredDocument } from "@/types"
 
 interface AssistantMessage {
@@ -51,8 +80,42 @@ interface AssistantMessage {
   content: string
 }
 
+/** A single icon button in the formatting toolbar. */
+function ToolButton({
+  onClick,
+  active,
+  disabled,
+  label,
+  children,
+}: {
+  onClick: () => void
+  active?: boolean
+  disabled?: boolean
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <Button
+      type="button"
+      variant={active ? "secondary" : "ghost"}
+      size="icon"
+      className="h-8 w-8"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      disabled={disabled}
+    >
+      {children}
+    </Button>
+  )
+}
+
+function ToolbarDivider() {
+  return <span className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+}
+
 export default function EditorPage() {
-  const editorRef = useRef<HTMLDivElement>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
@@ -69,6 +132,12 @@ export default function EditorPage() {
   const lastSavedRef = useRef<Date | null>(null)
   const isDirtyRef = useRef(false)
   const editorFocusedRef = useRef(false)
+  // Kept up to date so autosave/sync callbacks avoid stale closures.
+  const titleRef = useRef(title)
+  const contentRef = useRef(content)
+  const editorInstanceRef = useRef<Editor | null>(null)
+  // Holds content that arrives before the editor instance is ready.
+  const pendingContentRef = useRef<string | null>(null)
   const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false)
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([
     {
@@ -104,7 +173,95 @@ export default function EditorPage() {
   const [activeSidebarPanel, setActiveSidebarPanel] = useState<"documents" | "collaborators" | "comments" | "toolkit" | null>(null)
   const [scratchpadCollapsed, setScratchpadCollapsed] = useState(false)
   const [assistantCollapsed, setAssistantCollapsed] = useState(false)
+  const [rightDockOpen, setRightDockOpen] = useState(true)
   const { user } = useAuth()
+
+  useEffect(() => {
+    titleRef.current = title
+  }, [title])
+  useEffect(() => {
+    contentRef.current = content
+  }, [content])
+
+  // Stable autosave scheduler that reads the latest persist fn/title via refs.
+  const persistRef = useRef<(html: string, docTitle: string) => Promise<unknown>>(async () => undefined)
+
+  const scheduleSave = useCallback((docContent: string, docTitle: string) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      persistRef.current(docContent, docTitle)
+    }, 1000)
+  }, [])
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+        link: {
+          openOnClick: false,
+          autolink: true,
+          HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" },
+        },
+      }),
+      Highlight.configure({ multicolor: false }),
+      SubscriptExt,
+      SuperscriptExt,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+      ResizableImage.configure({ allowBase64: true, inline: false }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Columns,
+      Column,
+      Placeholder.configure({ placeholder: "Start writing your research draft…" }),
+    ],
+    editorProps: {
+      attributes: {
+        class: "prose-editor rich-editor min-h-[70vh] focus:outline-none",
+      },
+    },
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML()
+      isDirtyRef.current = true
+      setContent(html)
+      scheduleSave(html, titleRef.current)
+    },
+    onFocus: () => {
+      editorFocusedRef.current = true
+    },
+    onBlur: () => {
+      editorFocusedRef.current = false
+    },
+  })
+
+  // Keep an editor ref for closures + flush any content queued before mount.
+  useEffect(() => {
+    editorInstanceRef.current = editor ?? null
+    if (editor && pendingContentRef.current !== null) {
+      editor.commands.setContent(pendingContentRef.current, { emitUpdate: false })
+      pendingContentRef.current = null
+    }
+  }, [editor])
+
+  // Toggle editability with permissions.
+  useEffect(() => {
+    editor?.setEditable(canEdit)
+  }, [editor, canEdit])
+
+  // Push HTML into the editor without triggering the autosave/update loop.
+  const applyEditorContent = useCallback((html: string) => {
+    const value = html && html.trim() ? html : "<p></p>"
+    const instance = editorInstanceRef.current
+    if (instance) {
+      instance.commands.setContent(value, { emitUpdate: false })
+    } else {
+      pendingContentRef.current = value
+    }
+  }, [])
 
   const fetchCollaborators = useCallback(
     async (docId: string, ownerId: string) => {
@@ -139,15 +296,13 @@ export default function EditorPage() {
       setDocPermission(doc.permission ?? "owner")
       setIsOwner(doc.userId === user?.id)
       setCanEdit((doc.permission ?? "owner") !== "view")
-      if (editorRef.current) {
-        editorRef.current.innerHTML = doc.content
-      }
+      applyEditorContent(doc.content)
       isDirtyRef.current = false
       setRemoteUpdateAvailable(false)
       setLastSaved(new Date(doc.updatedAt))
       fetchCollaborators(doc.id, doc.userId)
     },
-    [fetchCollaborators, user?.id],
+    [applyEditorContent, fetchCollaborators, user?.id],
   )
 
   const createNewDocument = useCallback(async () => {
@@ -237,9 +392,7 @@ export default function EditorPage() {
         if (remoteIsNewer && !localBusy) {
           setTitle(current.title)
           setContent(current.content)
-          if (editorRef.current) {
-            editorRef.current.innerHTML = current.content
-          }
+          applyEditorContent(current.content)
           setLastSaved(updatedAt)
           setRemoteUpdateAvailable(false)
         } else if (remoteIsNewer && localBusy) {
@@ -261,7 +414,7 @@ export default function EditorPage() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [currentDocumentId, fetchCollaborators, user?.id])
+  }, [applyEditorContent, currentDocumentId, fetchCollaborators, user?.id])
 
   const persistDocument = useCallback(async (docContent: string, docTitle: string) => {
     if (!canEdit) {
@@ -311,6 +464,10 @@ export default function EditorPage() {
     }
   }, [canEdit, currentDocumentId, docPermission])
 
+  useEffect(() => {
+    persistRef.current = persistDocument
+  }, [persistDocument])
+
   const ensureDocumentId = useCallback(async () => {
     let docId = currentDocumentId
     if (!docId) {
@@ -323,29 +480,10 @@ export default function EditorPage() {
     return docId
   }, [content, currentDocumentId, persistDocument, title])
 
-  const scheduleSave = (docContent: string, docTitle: string) => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
-    saveTimeoutRef.current = setTimeout(() => {
-      persistDocument(docContent, docTitle)
-    }, 1000)
-  }
-
   const handleTitleChange = (value: string) => {
     isDirtyRef.current = true
     setTitle(value)
-    scheduleSave(content, value)
-  }
-
-  const handleEditorInput = () => {
-    if (!canEdit) return
-    if (editorRef.current) {
-      const newContent = editorRef.current.innerHTML
-      isDirtyRef.current = true
-      setContent(newContent)
-      scheduleSave(newContent, title)
-    }
+    scheduleSave(contentRef.current, value)
   }
 
   // Pull the latest server copy on demand once the user has resolved their
@@ -362,98 +500,44 @@ export default function EditorPage() {
       if (!current) return
       setTitle(current.title)
       setContent(current.content)
-      if (editorRef.current) {
-        editorRef.current.innerHTML = current.content
-      }
+      applyEditorContent(current.content)
       isDirtyRef.current = false
       setLastSaved(new Date(current.updatedAt))
       setRemoteUpdateAvailable(false)
     } catch (error) {
       console.error("Failed to load remote update", error)
     }
-  }, [currentDocumentId])
+  }, [applyEditorContent, currentDocumentId])
 
-  const handleToolbarAction = (command: string) => {
-    if (!canEdit) return
-    if (!editorRef.current || typeof document === "undefined") return
-    editorRef.current.focus()
-
-    switch (command) {
-      case "insertImage":
-        imageInputRef.current?.click()
-        return
-      case "format-h2":
-        document.execCommand("formatBlock", false, "h2")
-        break
-      case "format-h3":
-        document.execCommand("formatBlock", false, "h3")
-        break
-      case "superscript":
-        document.execCommand("superscript", false)
-        break
-      case "subscript":
-        document.execCommand("subscript", false)
-        break
-      case "highlight":
-        document.execCommand("hiliteColor", false, "#fff3b0")
-        break
-      case "removeFormat":
-        document.execCommand("removeFormat", false)
-        break
-      case "insertTable":
-        insertHtmlBlock(
-          `<table class="my-4 w-full border border-border text-sm">
-            <thead>
-              <tr class="bg-muted/60">
-                <th class="border border-border px-2 py-1">Metric</th>
-                <th class="border border-border px-2 py-1">Group A</th>
-                <th class="border border-border px-2 py-1">Group B</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="border border-border px-2 py-1">Mean</td>
-                <td class="border border-border px-2 py-1"></td>
-                <td class="border border-border px-2 py-1"></td>
-              </tr>
-              <tr>
-                <td class="border border-border px-2 py-1">Std. dev</td>
-                <td class="border border-border px-2 py-1"></td>
-                <td class="border border-border px-2 py-1"></td>
-              </tr>
-            </tbody>
-          </table>`,
-        )
-        handleEditorInput()
-        return
-      default:
-        document.execCommand(command, false)
-    }
-
-    handleEditorInput()
+  // Insert schema-safe HTML at the current selection.
+  const insertHtmlBlock = (html: string) => {
+    if (!canEdit || !editor) return
+    editor.chain().focus().insertContent(html).run()
   }
 
-  const insertHtmlBlock = (html: string) => {
-    if (!canEdit) return
-    if (!editorRef.current || typeof document === "undefined") return
-    editorRef.current.focus()
-    document.execCommand("insertHTML", false, html)
-    handleEditorInput()
+  const handleSetLink = () => {
+    if (!editor) return
+    const previousUrl = editor.getAttributes("link").href as string | undefined
+    const url = window.prompt("Link URL", previousUrl ?? "https://")
+    if (url === null) return
+    if (url.trim() === "") {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run()
+      return
+    }
+    editor.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run()
   }
 
   const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (!file) return
-
+    if (!file || !editor) {
+      event.target.value = ""
+      return
+    }
     const reader = new FileReader()
     reader.onload = (loadEvent) => {
       const result = loadEvent.target?.result
-      if (typeof result === "string" && typeof document !== "undefined") {
-        if (!editorRef.current) return
-        editorRef.current.focus()
-        const figure = `<figure class="my-4"><img src="${result}" alt="${file.name}" style="max-width:100%;height:auto;border-radius:0.5rem;" /></figure>`
-        document.execCommand("insertHTML", false, figure)
-        handleEditorInput()
+      if (typeof result === "string") {
+        editor.chain().focus().setImage({ src: result, alt: file.name }).run()
       }
     }
     reader.readAsDataURL(file)
@@ -502,10 +586,11 @@ export default function EditorPage() {
   }
 
   const handleDownloadDoc = () => {
-    if (!editorRef.current) return
+    const editorEl = editor?.view.dom as HTMLElement | undefined
+    if (!editorEl) return
     setExporting("doc")
     try {
-      const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>${editorRef.current.innerHTML}</body></html>`
+      const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>${editorEl.innerHTML}</body></html>`
       const blob = new Blob([html], { type: "application/msword" })
       const url = URL.createObjectURL(blob)
       const link = document.createElement("a")
@@ -610,13 +695,14 @@ export default function EditorPage() {
   }
 
   const handleDownloadPdf = async () => {
-    if (!editorRef.current) return
+    const editorEl = editor?.view.dom as HTMLElement | undefined
+    if (!editorEl) return
     setExporting("pdf")
     try {
       const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([import("jspdf"), import("html2canvas")])
 
       const { iframe, doc } = createExportSandbox()
-      const cleanClone = buildCleanClone(editorRef.current, doc)
+      const cleanClone = buildCleanClone(editorEl, doc)
       doc.body.appendChild(cleanClone)
 
       const canvas = await html2canvas(cleanClone, {
@@ -640,7 +726,7 @@ export default function EditorPage() {
 
       pdf.addImage(imgData, "PNG", marginX, marginY, renderWidth, renderHeight)
 
-      const plainText = (editorRef.current.innerText || "").trim()
+      const plainText = (editorEl.innerText || "").trim()
       if (plainText) {
         let y = 40
         const lineHeight = 16
@@ -858,7 +944,7 @@ export default function EditorPage() {
   }
 
   const buildLatexPreview = () => {
-    const html = editorRef.current?.innerHTML ?? ""
+    const html = editor?.getHTML() ?? ""
     setLatexContent(convertHtmlToLatex(html))
     setLatexModalOpen(true)
   }
@@ -898,7 +984,7 @@ export default function EditorPage() {
       return
     }
     const inline = [author, year].filter(Boolean).join(", ")
-    insertHtmlBlock(`<sup class="text-sm text-muted-foreground">(${escapeHtml(inline)})</sup>`)
+    insertHtmlBlock(`<sup>(${escapeHtml(inline)})</sup>&nbsp;`)
     setToolMessage("Inline citation added.")
   }
 
@@ -910,15 +996,11 @@ export default function EditorPage() {
     const safeLink = link ? encodeURI(link) : ""
 
     const refLink = link
-      ? `<a class="text-primary underline break-all" href="${safeLink}" target="_blank" rel="noreferrer">${escapeHtml(link)}</a>`
+      ? `<p><a href="${safeLink}" target="_blank" rel="noreferrer">${escapeHtml(link)}</a></p>`
       : ""
 
     insertHtmlBlock(
-      `<div class="my-3 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 text-sm leading-relaxed">
-        <p class="font-semibold text-primary">${escapeHtml(author)}${year ? ` (${escapeHtml(year)})` : ""}</p>
-        <p class="text-foreground">${escapeHtml(title)}</p>
-        ${refLink}
-      </div>`,
+      `<blockquote><p><strong>${escapeHtml(author)}${year ? ` (${escapeHtml(year)})` : ""}</strong></p><p>${escapeHtml(title)}</p>${refLink}</blockquote>`,
     )
     setToolMessage("Reference note added to the draft.")
   }
@@ -929,10 +1011,7 @@ export default function EditorPage() {
       return
     }
     insertHtmlBlock(
-      `<aside class="my-3 rounded-lg border border-border bg-muted/40 p-3 text-sm">
-        <p class="mb-1 font-semibold text-primary">Research note</p>
-        <p>${escapeHtml(scratchNote).replace(/\n/g, "<br />")}</p>
-      </aside>`,
+      `<blockquote><p><strong>Research note</strong></p><p>${escapeHtml(scratchNote).replace(/\n/g, "<br />")}</p></blockquote>`,
     )
     setScratchNote("")
     setToolMessage("Note inserted into the document.")
@@ -952,10 +1031,7 @@ export default function EditorPage() {
     const note = scratchNotes.find((item) => item.id === id)
     if (!note) return
     insertHtmlBlock(
-      `<aside class="my-3 rounded-lg border border-border bg-muted/40 p-3 text-sm">
-        <p class="mb-1 font-semibold text-primary">Research note</p>
-        <p>${escapeHtml(note.text).replace(/\n/g, "<br />")}</p>
-      </aside>`,
+      `<blockquote><p><strong>Research note</strong></p><p>${escapeHtml(note.text).replace(/\n/g, "<br />")}</p></blockquote>`,
     )
     setToolMessage("Saved note inserted.")
   }
@@ -968,7 +1044,7 @@ export default function EditorPage() {
     id: "documents" | "collaborators" | "comments" | "toolkit"
     label: string
     hint: string
-    icon: LucideIcon
+    icon: typeof FolderOpen
     colorClass: string
   }[] = [
     { id: "documents", label: "Docs", hint: "Open drafts", icon: FolderOpen, colorClass: "text-primary" },
@@ -977,64 +1053,106 @@ export default function EditorPage() {
     { id: "toolkit", label: "Tools", hint: "Citations", icon: SearchCheck, colorClass: "text-success" },
   ]
 
-  const toolbarActions: { icon: LucideIcon; command: string; label: string }[] = [
-    { icon: Bold, command: "bold", label: "Bold" },
-    { icon: Italic, command: "italic", label: "Italic" },
-    { icon: Underline, command: "underline", label: "Underline" },
-    { icon: HighlighterIcon, command: "highlight", label: "Highlight" },
-    { icon: Superscript, command: "superscript", label: "Superscript" },
-    { icon: Subscript, command: "subscript", label: "Subscript" },
-    { icon: AlignLeft, command: "justifyLeft", label: "Align left" },
-    { icon: AlignCenter, command: "justifyCenter", label: "Align center" },
-    { icon: AlignRight, command: "justifyRight", label: "Align right" },
-    { icon: List, command: "insertUnorderedList", label: "Bulleted list" },
-    { icon: ImageIcon, command: "insertImage", label: "Insert image" },
-    { icon: Table2, command: "insertTable", label: "Insert table" },
-    { icon: Undo2, command: "undo", label: "Undo" },
-    { icon: Redo2, command: "redo", label: "Redo" },
-    { icon: Eraser, command: "removeFormat", label: "Clear formatting" },
-  ]
+  const inTable = Boolean(editor?.isActive("table"))
 
   return (
     <div className="relative">
       <div className="flex h-[calc(100vh-4rem)] flex-col">
         <div className="border-b border-hairline bg-background/70 p-3 backdrop-blur-sm flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border border-input bg-background p-1">
-              {toolbarActions.map((action) => (
-                <Button
-                  key={action.command}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => handleToolbarAction(action.command)}
-                  title={action.label}
-                  aria-label={action.label}
-                  disabled={!canEdit}
-                >
-                  <action.icon className="h-4 w-4" />
-                </Button>
-              ))}
-            </div>
-            <div className="flex items-center rounded-md border border-input bg-background p-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="px-3 text-xs"
-                onClick={() => handleToolbarAction("format-h2")}
-                disabled={!canEdit}
-              >
-                H2
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="px-3 text-xs"
-                onClick={() => handleToolbarAction("format-h3")}
-                disabled={!canEdit}
-              >
-                H3
-              </Button>
+          <div className="flex flex-1 flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-0.5 rounded-md border border-input bg-background p-1">
+              <ToolButton label="Undo" disabled={!canEdit} onClick={() => editor?.chain().focus().undo().run()}>
+                <Undo2 className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Redo" disabled={!canEdit} onClick={() => editor?.chain().focus().redo().run()}>
+                <Redo2 className="h-4 w-4" />
+              </ToolButton>
+              <ToolbarDivider />
+              <ToolButton label="Paragraph" disabled={!canEdit} active={editor?.isActive("paragraph")} onClick={() => editor?.chain().focus().setParagraph().run()}>
+                <Pilcrow className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Heading 1" disabled={!canEdit} active={editor?.isActive("heading", { level: 1 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}>
+                <Heading1 className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Heading 2" disabled={!canEdit} active={editor?.isActive("heading", { level: 2 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}>
+                <Heading2 className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Heading 3" disabled={!canEdit} active={editor?.isActive("heading", { level: 3 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}>
+                <Heading3 className="h-4 w-4" />
+              </ToolButton>
+              <ToolbarDivider />
+              <ToolButton label="Bold" disabled={!canEdit} active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()}>
+                <Bold className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Italic" disabled={!canEdit} active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()}>
+                <Italic className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Underline" disabled={!canEdit} active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()}>
+                <Underline className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Strikethrough" disabled={!canEdit} active={editor?.isActive("strike")} onClick={() => editor?.chain().focus().toggleStrike().run()}>
+                <Strikethrough className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Highlight" disabled={!canEdit} active={editor?.isActive("highlight")} onClick={() => editor?.chain().focus().toggleHighlight().run()}>
+                <HighlighterIcon className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Superscript" disabled={!canEdit} active={editor?.isActive("superscript")} onClick={() => editor?.chain().focus().toggleSuperscript().run()}>
+                <Superscript className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Subscript" disabled={!canEdit} active={editor?.isActive("subscript")} onClick={() => editor?.chain().focus().toggleSubscript().run()}>
+                <Subscript className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Inline code" disabled={!canEdit} active={editor?.isActive("code")} onClick={() => editor?.chain().focus().toggleCode().run()}>
+                <Code className="h-4 w-4" />
+              </ToolButton>
+              <ToolbarDivider />
+              <ToolButton label="Align left" disabled={!canEdit} active={editor?.isActive({ textAlign: "left" })} onClick={() => editor?.chain().focus().setTextAlign("left").run()}>
+                <AlignLeft className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Align center" disabled={!canEdit} active={editor?.isActive({ textAlign: "center" })} onClick={() => editor?.chain().focus().setTextAlign("center").run()}>
+                <AlignCenter className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Align right" disabled={!canEdit} active={editor?.isActive({ textAlign: "right" })} onClick={() => editor?.chain().focus().setTextAlign("right").run()}>
+                <AlignRight className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Justify" disabled={!canEdit} active={editor?.isActive({ textAlign: "justify" })} onClick={() => editor?.chain().focus().setTextAlign("justify").run()}>
+                <AlignJustify className="h-4 w-4" />
+              </ToolButton>
+              <ToolbarDivider />
+              <ToolButton label="Bulleted list" disabled={!canEdit} active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()}>
+                <List className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Numbered list" disabled={!canEdit} active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>
+                <ListOrdered className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Blockquote" disabled={!canEdit} active={editor?.isActive("blockquote")} onClick={() => editor?.chain().focus().toggleBlockquote().run()}>
+                <Quote className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Code block" disabled={!canEdit} active={editor?.isActive("codeBlock")} onClick={() => editor?.chain().focus().toggleCodeBlock().run()}>
+                <Code2 className="h-4 w-4" />
+              </ToolButton>
+              <ToolbarDivider />
+              <ToolButton label="Insert link" disabled={!canEdit} active={editor?.isActive("link")} onClick={handleSetLink}>
+                <LinkIcon className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Insert image" disabled={!canEdit} onClick={() => imageInputRef.current?.click()}>
+                <ImageIcon className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Insert table" disabled={!canEdit} onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
+                <Table2 className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Two columns" disabled={!canEdit} onClick={() => editor?.chain().focus().setColumns(2).run()}>
+                <Columns2 className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Three columns" disabled={!canEdit} onClick={() => editor?.chain().focus().setColumns(3).run()}>
+                <Columns3 className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Horizontal rule" disabled={!canEdit} onClick={() => editor?.chain().focus().setHorizontalRule().run()}>
+                <Minus className="h-4 w-4" />
+              </ToolButton>
+              <ToolButton label="Clear formatting" disabled={!canEdit} onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}>
+                <Eraser className="h-4 w-4" />
+              </ToolButton>
             </div>
             <input
               ref={imageInputRef}
@@ -1046,7 +1164,7 @@ export default function EditorPage() {
             <Input
               value={title}
               onChange={(event) => handleTitleChange(event.target.value)}
-              className="ml-4 h-9 w-64"
+              className="ml-2 h-9 w-56"
               placeholder="Document title"
               disabled={!canEdit}
             />
@@ -1100,6 +1218,23 @@ export default function EditorPage() {
             {shareFeedback && <span className="text-xs text-primary">{shareFeedback}</span>}
           </div>
         </div>
+
+        {/* Contextual table controls */}
+        {inTable && canEdit && (
+          <div className="flex flex-wrap items-center gap-1 border-b border-hairline bg-background/60 px-3 py-1.5 text-xs backdrop-blur-sm">
+            <span className="mr-1 text-muted-foreground">Table:</span>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => editor?.chain().focus().addColumnAfter().run()}>Add col</Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => editor?.chain().focus().deleteColumn().run()}>Del col</Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => editor?.chain().focus().addRowAfter().run()}>Add row</Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => editor?.chain().focus().deleteRow().run()}>Del row</Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => editor?.chain().focus().toggleHeaderRow().run()}>
+              <Rows3 className="mr-1 h-3.5 w-3.5" /> Header
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-error" onClick={() => editor?.chain().focus().deleteTable().run()}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete table
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-1 overflow-hidden">
           <div className="hidden border-r border-hairline bg-background/65 px-3 py-4 backdrop-blur-sm lg:flex lg:w-24 lg:flex-col lg:items-center lg:gap-3">
@@ -1448,24 +1583,10 @@ export default function EditorPage() {
                   </Button>
                 </div>
               )}
-              <div
-                ref={editorRef}
-                className={`rich-editor min-h-[70vh] text-base leading-relaxed text-foreground focus:outline-none ${
-                  !canEdit ? "pointer-events-none opacity-80" : ""
-                }`}
-                data-export-root="true"
-                contentEditable={canEdit}
-                aria-readonly={!canEdit}
-                onInput={handleEditorInput}
-                onFocus={() => {
-                  editorFocusedRef.current = true
-                }}
-                onBlur={() => {
-                  editorFocusedRef.current = false
-                }}
-                suppressContentEditableWarning
-              />
-              {isLoading && (
+              <div className={!canEdit ? "opacity-80" : undefined}>
+                <EditorContent editor={editor} />
+              </div>
+              {(isLoading || !editor) && (
                 <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading document...
@@ -1474,8 +1595,23 @@ export default function EditorPage() {
             </div>
           </div>
 
-          <div className="w-full border-l border-hairline bg-background/72 p-4 backdrop-blur-sm lg:w-[28rem] lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
-            <div className="space-y-4">
+          {rightDockOpen && (
+            <div className="w-full border-l border-hairline bg-background/72 p-4 backdrop-blur-sm lg:w-[28rem] lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workspace</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setRightDockOpen(false)}
+                  title="Hide panel"
+                  aria-label="Hide workspace panel"
+                >
+                  <PanelRightClose className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-4">
               <Card className="border-hairline bg-transparent">
                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1596,10 +1732,24 @@ export default function EditorPage() {
                   </CardContent>
                 )}
               </Card>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
+
+      {/* Floating toggle to reopen the workspace dock */}
+      {!rightDockOpen && (
+        <Button
+          type="button"
+          onClick={() => setRightDockOpen(true)}
+          className="fixed bottom-6 right-6 z-40 shadow-lg"
+          size="sm"
+        >
+          <PanelRightOpen className="mr-2 h-4 w-4" /> Workspace
+        </Button>
+      )}
+
       {latexModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="absolute inset-0" onClick={() => setLatexModalOpen(false)} />
