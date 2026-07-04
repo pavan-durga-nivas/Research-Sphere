@@ -33,7 +33,7 @@ staying on `contentEditable` (dead end for these features).
 ### 2026-07-04 — Phase 0: TipTap de-risking spike
 - **Issue:** #3
 - **Branch:** `spike/tiptap-editor-foundation`
-- **PR:** _(linked on open)_
+- **PR:** #4
 
 **Changes**
 - Added dependencies: `@tiptap/react`, `@tiptap/pm`, `@tiptap/starter-kit`
