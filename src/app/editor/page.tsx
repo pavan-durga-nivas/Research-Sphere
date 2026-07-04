@@ -67,6 +67,9 @@ export default function EditorPage() {
   const [canEdit, setCanEdit] = useState(true)
   const [isOwner, setIsOwner] = useState(true)
   const lastSavedRef = useRef<Date | null>(null)
+  const isDirtyRef = useRef(false)
+  const editorFocusedRef = useRef(false)
+  const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false)
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([
     {
       role: "assistant",
@@ -139,6 +142,8 @@ export default function EditorPage() {
       if (editorRef.current) {
         editorRef.current.innerHTML = doc.content
       }
+      isDirtyRef.current = false
+      setRemoteUpdateAvailable(false)
       setLastSaved(new Date(doc.updatedAt))
       fetchCollaborators(doc.id, doc.userId)
     },
@@ -224,13 +229,21 @@ export default function EditorPage() {
         setIsOwner(current.userId === user?.id)
         setCanEdit((current.permission ?? "owner") !== "view")
 
-        if (remoteIsNewer) {
+        // Don't clobber in-flight local edits. If the user is actively
+        // editing or has unsaved changes, surface the update instead of
+        // silently overwriting their work (last-writer-wins data loss).
+        const localBusy = editorFocusedRef.current || isDirtyRef.current
+
+        if (remoteIsNewer && !localBusy) {
           setTitle(current.title)
           setContent(current.content)
           if (editorRef.current) {
             editorRef.current.innerHTML = current.content
           }
           setLastSaved(updatedAt)
+          setRemoteUpdateAvailable(false)
+        } else if (remoteIsNewer && localBusy) {
+          setRemoteUpdateAvailable(true)
         }
 
         if (current.userId === user?.id) {
@@ -286,6 +299,7 @@ export default function EditorPage() {
         return [updatedDoc, ...prev]
       })
       setLastSaved(new Date(updatedDoc.updatedAt))
+      isDirtyRef.current = false
       setStatusMessage("Saved")
       return updatedDoc
     } catch (error) {
@@ -319,6 +333,7 @@ export default function EditorPage() {
   }
 
   const handleTitleChange = (value: string) => {
+    isDirtyRef.current = true
     setTitle(value)
     scheduleSave(content, value)
   }
@@ -327,10 +342,36 @@ export default function EditorPage() {
     if (!canEdit) return
     if (editorRef.current) {
       const newContent = editorRef.current.innerHTML
+      isDirtyRef.current = true
       setContent(newContent)
       scheduleSave(newContent, title)
     }
   }
+
+  // Pull the latest server copy on demand once the user has resolved their
+  // in-flight edits (used by the "remote changes" banner).
+  const loadRemoteUpdate = useCallback(async () => {
+    if (!currentDocumentId) return
+    try {
+      const response = await fetch("/api/documents", { cache: "no-store" })
+      if (!response.ok) return
+      const data = await response.json()
+      const docs =
+        (data.documents as (StoredDocument & { permission?: "owner" | "edit" | "view" })[]) || []
+      const current = docs.find((doc) => doc.id === currentDocumentId)
+      if (!current) return
+      setTitle(current.title)
+      setContent(current.content)
+      if (editorRef.current) {
+        editorRef.current.innerHTML = current.content
+      }
+      isDirtyRef.current = false
+      setLastSaved(new Date(current.updatedAt))
+      setRemoteUpdateAvailable(false)
+    } catch (error) {
+      console.error("Failed to load remote update", error)
+    }
+  }, [currentDocumentId])
 
   const handleToolbarAction = (command: string) => {
     if (!canEdit) return
@@ -957,7 +998,7 @@ export default function EditorPage() {
   return (
     <div className="relative">
       <div className="flex h-[calc(100vh-4rem)] flex-col">
-        <div className="border-b border-white/10 bg-background/70 p-3 backdrop-blur-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="border-b border-hairline bg-background/70 p-3 backdrop-blur-sm flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-md border border-input bg-background p-1">
               {toolbarActions.map((action) => (
@@ -1012,7 +1053,7 @@ export default function EditorPage() {
           </div>
           <div className="flex flex-col items-end gap-1 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
-              <span className="rounded-md border border-white/10 px-2 py-1 text-xs">
+              <span className="rounded-md border border-hairline px-2 py-1 text-xs">
                 {docPermission === "owner"
                   ? "Owner"
                   : docPermission === "edit"
@@ -1061,7 +1102,7 @@ export default function EditorPage() {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <div className="hidden border-r border-white/10 bg-background/65 px-3 py-4 backdrop-blur-sm lg:flex lg:w-24 lg:flex-col lg:items-center lg:gap-3">
+          <div className="hidden border-r border-hairline bg-background/65 px-3 py-4 backdrop-blur-sm lg:flex lg:w-24 lg:flex-col lg:items-center lg:gap-3">
             <div className="text-center text-xs font-medium text-muted-foreground">
               <p>Open</p>
               <p>Panels</p>
@@ -1079,13 +1120,13 @@ export default function EditorPage() {
                     "flex w-full flex-col items-center gap-2 rounded-2xl border px-2 py-3 text-center transition-all",
                     isActive
                       ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-white/10 bg-background/40 text-muted-foreground hover:border-white/20 hover:text-foreground",
+                      : "border-hairline bg-background/40 text-muted-foreground hover:border-white/20 hover:text-foreground",
                   ].join(" ")}
                 >
                   <div
                     className={[
                       "flex h-10 w-10 items-center justify-center rounded-xl border bg-background/40",
-                      isActive ? "border-primary/30 text-primary" : "border-white/10",
+                      isActive ? "border-primary/30 text-primary" : "border-hairline",
                       item.colorClass,
                     ].join(" ")}
                   >
@@ -1098,15 +1139,15 @@ export default function EditorPage() {
                 </button>
               )
             })}
-            <div className="rounded-2xl border border-white/10 bg-background/40 px-3 py-4 text-center text-[11px] text-muted-foreground">
+            <div className="rounded-2xl border border-hairline bg-background/40 px-3 py-4 text-center text-[11px] text-muted-foreground">
               Click an icon to reveal workspace utilities.
             </div>
           </div>
 
           {activeSidebarPanel && (
-            <div className="hidden border-r border-white/10 bg-background/72 p-4 backdrop-blur-sm lg:block lg:w-[23rem] lg:overflow-y-auto">
+            <div className="hidden border-r border-hairline bg-background/72 p-4 backdrop-blur-sm lg:block lg:w-[23rem] lg:overflow-y-auto">
               {activeSidebarPanel === "documents" && (
-                <Card className="border-white/10 bg-transparent">
+                <Card className="border-hairline bg-transparent">
                   <CardHeader className="pb-2 flex flex-row items-center justify-between">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
                       <FolderOpen className="h-4 w-4 text-primary" /> Your Documents
@@ -1122,7 +1163,7 @@ export default function EditorPage() {
                         className={`w-full rounded-xl border px-3 py-3 text-left text-sm transition ${
                           doc.id === currentDocumentId
                             ? "border-primary bg-primary/10 text-primary"
-                            : "border-white/10 bg-background/35 hover:border-white/30"
+                            : "border-hairline bg-background/35 hover:border-white/30"
                         }`}
                         onClick={() => loadDocument(doc)}
                       >
@@ -1142,7 +1183,7 @@ export default function EditorPage() {
               )}
 
               {activeSidebarPanel === "collaborators" && (
-                <Card className="border-white/10 bg-transparent">
+                <Card className="border-hairline bg-transparent">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <Users className="h-4 w-4 text-secondary" /> Collaborators
@@ -1150,7 +1191,7 @@ export default function EditorPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {isOwner && (
-                      <div className="space-y-2 rounded-xl border border-white/10 p-3">
+                      <div className="space-y-2 rounded-xl border border-hairline p-3">
                         <p className="text-xs text-muted-foreground">Share access via account ID (preferred) or email.</p>
                         <Input
                           placeholder="Account ID from profile"
@@ -1184,7 +1225,7 @@ export default function EditorPage() {
                             </Button>
                           </div>
                         </div>
-                        {inviteError && <p className="text-xs text-red-400">{inviteError}</p>}
+                        {inviteError && <p className="text-xs text-error">{inviteError}</p>}
                         <Button size="sm" className="w-full" onClick={handleInvite} disabled={inviteStatus === "sending"}>
                           {inviteStatus === "sending" ? (
                             <>
@@ -1199,7 +1240,7 @@ export default function EditorPage() {
                       </div>
                     )}
 
-                    {collabError && <p className="text-xs text-red-400">{collabError}</p>}
+                    {collabError && <p className="text-xs text-error">{collabError}</p>}
 
                     {collaborators.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center">No collaborators yet.</p>
@@ -1208,7 +1249,7 @@ export default function EditorPage() {
                         {collaborators.map((collaborator) => (
                           <div
                             key={collaborator.id}
-                            className="rounded-xl border border-white/10 p-3 text-sm flex flex-col gap-2"
+                            className="rounded-xl border border-hairline p-3 text-sm flex flex-col gap-2"
                           >
                             <div className="flex items-center justify-between">
                               <div>
@@ -1219,7 +1260,7 @@ export default function EditorPage() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-8 px-2 text-xs text-red-300"
+                                  className="h-8 px-2 text-xs text-error"
                                   onClick={() => handleRevokeCollaborator(collaborator.id)}
                                   disabled={collabBusyId === collaborator.id}
                                 >
@@ -1263,7 +1304,7 @@ export default function EditorPage() {
               )}
 
               {activeSidebarPanel === "comments" && (
-                <Card className="border-white/10 bg-transparent">
+                <Card className="border-hairline bg-transparent">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <MessagesSquare className="h-4 w-4 text-accent" /> Comments
@@ -1292,7 +1333,7 @@ export default function EditorPage() {
                       ) : (
                         <div className="space-y-2">
                           {comments.map((comment) => (
-                            <div key={comment.id} className="rounded-xl border border-white/10 p-3 text-sm">
+                            <div key={comment.id} className="rounded-xl border border-hairline p-3 text-sm">
                               <div className="flex items-center justify-between">
                                 <p className="font-semibold">{comment.author}</p>
                                 <button
@@ -1316,14 +1357,14 @@ export default function EditorPage() {
               )}
 
               {activeSidebarPanel === "toolkit" && (
-                <Card className="border-white/10 bg-transparent">
+                <Card className="border-hairline bg-transparent">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <Beaker className="h-4 w-4 text-success" /> Research Toolkit
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="rounded-xl border border-white/10 p-3 space-y-2">
+                    <div className="rounded-xl border border-hairline p-3 space-y-2">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
                         <Link2 className="h-4 w-4 text-primary" /> Citation helper
                       </p>
@@ -1369,8 +1410,8 @@ export default function EditorPage() {
           )}
 
           <div className="flex-1 overflow-y-auto bg-background/70 px-6 py-6 lg:px-8">
-            <div className="mx-auto max-w-4xl glass rounded-3xl border border-white/10 p-6 min-h-full">
-              <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5">
+            <div className="mx-auto max-w-4xl glass rounded-3xl border border-hairline p-6 min-h-full">
+              <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-hairline pb-5">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">Focused Writing Workspace</p>
                   <h1 className="mt-2 text-3xl font-bold tracking-tight">{title || "Untitled Document"}</h1>
@@ -1380,7 +1421,7 @@ export default function EditorPage() {
                 </div>
                 <div className="flex flex-col items-end gap-2 text-sm text-muted-foreground">
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                    <span className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-wide">
+                    <span className="rounded-full border border-hairline px-3 py-1 text-xs uppercase tracking-wide">
                       {docPermission === "owner"
                         ? "Owner"
                         : docPermission === "edit"
@@ -1397,15 +1438,31 @@ export default function EditorPage() {
                   {shareFeedback && <span className="text-xs text-primary">{shareFeedback}</span>}
                 </div>
               </div>
+              {remoteUpdateAvailable && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+                  <span className="text-warning">
+                    A collaborator saved newer changes. Loading now would replace your unsaved edits.
+                  </span>
+                  <Button size="sm" variant="outline" onClick={loadRemoteUpdate}>
+                    Load latest
+                  </Button>
+                </div>
+              )}
               <div
                 ref={editorRef}
-                className={`rich-editor min-h-[70vh] text-base leading-relaxed text-white focus:outline-none ${
+                className={`rich-editor min-h-[70vh] text-base leading-relaxed text-foreground focus:outline-none ${
                   !canEdit ? "pointer-events-none opacity-80" : ""
                 }`}
                 data-export-root="true"
                 contentEditable={canEdit}
                 aria-readonly={!canEdit}
                 onInput={handleEditorInput}
+                onFocus={() => {
+                  editorFocusedRef.current = true
+                }}
+                onBlur={() => {
+                  editorFocusedRef.current = false
+                }}
                 suppressContentEditableWarning
               />
               {isLoading && (
@@ -1417,9 +1474,9 @@ export default function EditorPage() {
             </div>
           </div>
 
-          <div className="w-full border-l border-white/10 bg-background/72 p-4 backdrop-blur-sm lg:w-[28rem] lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
+          <div className="w-full border-l border-hairline bg-background/72 p-4 backdrop-blur-sm lg:w-[28rem] lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
             <div className="space-y-4">
-              <Card className="border-white/10 bg-transparent">
+              <Card className="border-hairline bg-transparent">
                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <NotebookPen className="h-4 w-4 text-primary" /> Scratchpad
@@ -1456,7 +1513,7 @@ export default function EditorPage() {
                     {scratchNotes.length > 0 && (
                       <div className="space-y-2">
                         {scratchNotes.map((note) => (
-                          <div key={note.id} className="rounded-xl border border-white/10 bg-muted/40 p-3 text-sm">
+                          <div key={note.id} className="rounded-xl border border-hairline bg-muted/40 p-3 text-sm">
                             <p className="whitespace-pre-wrap">{note.text}</p>
                             <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                               <Button
@@ -1487,7 +1544,7 @@ export default function EditorPage() {
                 )}
               </Card>
 
-              <Card className="border-white/10 bg-transparent flex flex-col min-h-[24rem]">
+              <Card className="border-hairline bg-transparent flex flex-col min-h-[24rem]">
                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-primary" /> AI Assistant
@@ -1505,7 +1562,7 @@ export default function EditorPage() {
                 </CardHeader>
                 {!assistantCollapsed && (
                   <CardContent className="flex flex-1 flex-col gap-3 min-h-0">
-                    <div className="flex-1 min-h-0 space-y-3 overflow-y-auto rounded-xl border border-white/10 p-3">
+                    <div className="flex-1 min-h-0 space-y-3 overflow-y-auto rounded-xl border border-hairline p-3">
                       {assistantMessages.map((message, index) => (
                         <div
                           key={index}

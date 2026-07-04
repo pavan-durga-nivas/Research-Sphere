@@ -52,7 +52,7 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-8">
         {metrics.map((metric) => (
-          <Card key={metric.title} className="border-white/10">
+          <Card key={metric.title} className="border-hairline">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
               <metric.icon className="h-4 w-4 text-muted-foreground" />
@@ -64,7 +64,7 @@ export default async function DashboardPage() {
           </Card>
         ))}
 
-        <Card className="border-white/10">
+        <Card className="border-hairline">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">AI Insight</CardTitle>
             <Sparkles className="h-4 w-4 text-primary" />
@@ -80,7 +80,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-7">
-        <Card className="col-span-4 border-white/10">
+        <Card className="col-span-4 border-hairline">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle>Recent Activity</CardTitle>
@@ -97,7 +97,7 @@ export default async function DashboardPage() {
               <p className="text-sm text-muted-foreground">No recent activity. Start by saving a paper.</p>
             ) : (
               snapshot.recentActivity.map((item) => (
-                <div key={item.id} className="flex items-center gap-4 rounded-lg border border-white/10 p-3">
+                <div key={item.id} className="flex items-center gap-4 rounded-lg border border-hairline p-3">
                   <div className="rounded-full bg-primary/10 p-2 text-primary">
                     {item.type === "document" ? <FileText className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
                   </div>
@@ -114,7 +114,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="col-span-3 border-white/10">
+        <Card className="col-span-3 border-hairline">
           <CardHeader>
             <CardTitle>Reading Queue</CardTitle>
             <CardDescription>Next up from your saved papers.</CardDescription>
@@ -124,7 +124,7 @@ export default async function DashboardPage() {
               <p className="text-sm text-muted-foreground">Save papers from Discovery to build your queue.</p>
             ) : (
               snapshot.recentSaved.map((paper) => (
-                <div key={paper.id} className="rounded-lg border border-white/10 p-3 space-y-1">
+                <div key={paper.id} className="rounded-lg border border-hairline p-3 space-y-1">
                   <p className="text-sm font-semibold">{paper.title}</p>
                   <p className="text-xs text-muted-foreground">
                     {paper.authors} • {paper.year ?? "n/a"}
@@ -144,25 +144,25 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <Card className="mt-8 border-white/10">
+      <Card className="mt-8 border-hairline">
         <CardHeader>
           <CardTitle>Productivity Boost</CardTitle>
           <CardDescription>Quick stats to keep momentum.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-lg border border-white/10 p-4">
+          <div className="rounded-lg border border-hairline p-4">
             <p className="text-sm text-muted-foreground">Average session</p>
             <p className="text-2xl font-semibold">{Math.max(1, Math.floor(snapshot.estimatedReadingHours / 2))} hrs</p>
             <p className="text-xs text-success mt-1 flex items-center gap-1">
               <TrendingUp className="h-3 w-3" /> up vs last week
             </p>
           </div>
-          <div className="rounded-lg border border-white/10 p-4">
+          <div className="rounded-lg border border-hairline p-4">
             <p className="text-sm text-muted-foreground">AI requests sent</p>
             <p className="text-2xl font-semibold">{snapshot.totalDocuments + snapshot.savedPapers}</p>
             <p className="text-xs text-muted-foreground mt-1">Ask Gemini for section rewrites anytime.</p>
           </div>
-          <div className="rounded-lg border border-white/10 p-4">
+          <div className="rounded-lg border border-hairline p-4">
             <p className="text-sm text-muted-foreground">Next action</p>
             <p className="text-2xl font-semibold">Validate draft</p>
             <p className="text-xs text-muted-foreground mt-1">Send your latest document through Validation.</p>

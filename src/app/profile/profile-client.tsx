@@ -84,7 +84,7 @@ export default function ProfileClient({ initialUser }: ProfileClientProps) {
         <p className="text-muted-foreground max-w-2xl">
           Keep your collaborator card up to date so co-authors know who they are working with and how to reach you.
         </p>
-        <div className="inline-flex items-center gap-3 rounded-md border border-white/10 bg-muted/40 px-3 py-2 text-sm w-fit">
+        <div className="inline-flex items-center gap-3 rounded-md border border-hairline bg-muted/40 px-3 py-2 text-sm w-fit">
           <span className="text-muted-foreground">Account ID</span>
           <code className="rounded bg-background px-2 py-[2px] text-xs">{initialUser.id}</code>
           <Button size="sm" variant="outline" onClick={handleCopyAccountId}>
@@ -95,7 +95,7 @@ export default function ProfileClient({ initialUser }: ProfileClientProps) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr,1fr]">
-        <Card className="border-white/10">
+        <Card className="border-hairline">
           <CardHeader>
             <CardTitle>Edit profile</CardTitle>
           </CardHeader>
@@ -190,7 +190,7 @@ export default function ProfileClient({ initialUser }: ProfileClientProps) {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-white/10">
+          <Card className="border-hairline">
             <CardHeader>
               <CardTitle>Profile preview</CardTitle>
             </CardHeader>
@@ -232,13 +232,13 @@ export default function ProfileClient({ initialUser }: ProfileClientProps) {
                   </div>
                 )}
               </div>
-              <div className="rounded-md border border-white/10 bg-muted/40 p-3 text-sm leading-relaxed">
+              <div className="rounded-md border border-hairline bg-muted/40 p-3 text-sm leading-relaxed">
                 {form.bio || "A short bio about your research focus will appear here."}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-white/10">
+          <Card className="border-hairline">
             <CardHeader>
               <CardTitle>Collaboration readiness</CardTitle>
             </CardHeader>

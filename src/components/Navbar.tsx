@@ -50,9 +50,9 @@ export function Navbar() {
   const visibleLinks = links.filter((link) => (link.auth ? isAuthenticated : true))
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b border-hairline bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex min-h-20 flex-wrap items-center justify-between gap-4 px-4 py-3">
-        <Link href="/" className="flex items-center gap-3 rounded-2xl border border-white/10 bg-background/60 px-3 py-2 transition-colors hover:border-primary/30">
+        <Link href="/" className="flex items-center gap-3 rounded-2xl border border-hairline bg-background/60 px-3 py-2 transition-colors hover:border-primary/30">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary via-secondary to-primary text-sm font-black text-background shadow-[0_0_24px_rgba(99,102,241,0.18)]">
             RS
           </div>
@@ -64,7 +64,7 @@ export function Navbar() {
           </div>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-2 rounded-2xl border border-white/10 bg-background/55 p-2">
+        <nav className="hidden md:flex items-center gap-2 rounded-2xl border border-hairline bg-background/55 p-2">
           {visibleLinks.map((link) => {
             const isActive = pathname === link.href
             const Icon = link.icon
@@ -77,13 +77,13 @@ export function Navbar() {
                   "flex items-center gap-3 rounded-xl border px-3 py-2 transition-all",
                   isActive
                     ? "border-primary/40 bg-primary/12 text-foreground shadow-[0_0_0_1px_rgba(6,182,212,0.08)]"
-                    : "border-white/10 bg-background/45 text-muted-foreground hover:border-white/20 hover:text-foreground",
+                    : "border-hairline bg-background/45 text-muted-foreground hover:border-white/20 hover:text-foreground",
                 ].join(" ")}
               >
                 <div
                   className={[
                     "flex h-9 w-9 items-center justify-center rounded-lg border",
-                    isActive ? "border-current/30 bg-background/40" : "border-white/10 bg-background/40",
+                    isActive ? "border-current/30 bg-background/40" : "border-hairline bg-background/40",
                     link.color,
                   ].join(" ")}
                 >
@@ -104,7 +104,7 @@ export function Navbar() {
             size="icon"
             aria-label="Toggle theme"
             onClick={toggleTheme}
-            className="border border-white/10 bg-background/45 hover:border-border"
+            className="border border-hairline bg-background/45 hover:border-border"
           >
             {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
           </Button>
@@ -115,24 +115,24 @@ export function Navbar() {
                   <p className="text-sm font-semibold leading-tight">{user?.name}</p>
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
-                <Button variant="outline" size="sm" className="border-white/10 bg-background/45" asChild>
+                <Button variant="outline" size="sm" className="border-hairline bg-background/45" asChild>
                   <Link href="/profile">
                     <UserRound className="mr-2 h-4 w-4" /> Profile
                   </Link>
                 </Button>
-                <Button variant="outline" size="sm" className="border-white/10 bg-background/45" asChild>
+                <Button variant="outline" size="sm" className="border-hairline bg-background/45" asChild>
                   <Link href="/dashboard">
                     <BookOpen className="mr-2 h-4 w-4" /> Dashboard
                   </Link>
                 </Button>
-                <Button size="sm" variant="ghost" className="border border-transparent hover:border-white/10" onClick={handleSignOut} disabled={isSigningOut}>
+                <Button size="sm" variant="ghost" className="border border-transparent hover:border-hairline" onClick={handleSignOut} disabled={isSigningOut}>
                   {isSigningOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
                   Sign out
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" size="sm" className="border border-white/10 bg-background/45" asChild>
+                <Button variant="ghost" size="sm" className="border border-hairline bg-background/45" asChild>
                   <Link href="/login">Sign In</Link>
                 </Button>
                 <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>

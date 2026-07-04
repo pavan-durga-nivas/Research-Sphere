@@ -3,7 +3,7 @@ import { Search } from "lucide-react"
 
 export function Footer() {
     return (
-        <footer className="border-t border-white/10 bg-background/50 backdrop-blur-lg">
+        <footer className="border-t border-hairline bg-background/50 backdrop-blur-lg">
             <div className="container mx-auto px-4 py-12 md:py-16">
                 <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
                     <div className="space-y-4">
@@ -46,7 +46,7 @@ export function Footer() {
                         </ul>
                     </div>
                 </div>
-                <div className="mt-12 border-t border-white/10 pt-8 text-center text-sm text-muted-foreground">
+                <div className="mt-12 border-t border-hairline pt-8 text-center text-sm text-muted-foreground">
                     © {new Date().getFullYear()} Research-Sphere. All rights reserved.
                 </div>
             </div>
