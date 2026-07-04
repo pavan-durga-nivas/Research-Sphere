@@ -109,7 +109,7 @@ export default function DiscoveryPage() {
           </p>
         </div>
 
-        <div className="glass rounded-2xl border border-white/10 p-6 space-y-4">
+        <div className="glass rounded-2xl border border-hairline p-6 space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
@@ -135,7 +135,7 @@ export default function DiscoveryPage() {
             {trendingTopics.map((topic) => (
               <button
                 key={topic}
-                className="rounded-full border border-white/10 px-3 py-1 text-xs hover:text-primary transition-colors"
+                className="rounded-full border border-hairline px-3 py-1 text-xs hover:text-primary transition-colors"
                 onClick={() => {
                   setQuery(topic)
                   executeSearch(topic)
@@ -146,11 +146,11 @@ export default function DiscoveryPage() {
             ))}
           </div>
         </div>
-        {error && <p className="text-center text-sm text-red-400">{error}</p>}
+        {error && <p className="text-center text-sm text-error">{error}</p>}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
-        <Card className="glass h-fit border-white/10">
+        <Card className="glass h-fit border-hairline">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Filter className="h-4 w-4" /> Refine Results
@@ -188,13 +188,13 @@ export default function DiscoveryPage() {
 
         <div className="space-y-4">
           {isPending && (
-            <div className="glass rounded-xl border border-white/10 p-6 flex items-center gap-3 text-muted-foreground">
+            <div className="glass rounded-xl border border-hairline p-6 flex items-center gap-3 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               Scanning Semantic Scholar...
             </div>
           )}
           {!isPending && filteredResults.length === 0 && (
-            <div className="glass rounded-xl border border-white/10 p-8 text-center text-muted-foreground">
+            <div className="glass rounded-xl border border-hairline p-8 text-center text-muted-foreground">
               No papers yet. Try a different topic or broaden your filters.
             </div>
           )}
@@ -203,7 +203,7 @@ export default function DiscoveryPage() {
             const authors = paper.authors.map((author) => author.name).join(", ")
             const isSaved = savedPapers[paper.paperId]
             return (
-              <Card key={paper.paperId} className="border-white/10 bg-background/70">
+              <Card key={paper.paperId} className="border-hairline bg-background/70">
                 <CardHeader>
                   <div className="flex flex-col gap-2">
                     <CardTitle className="text-xl leading-tight">{paper.title}</CardTitle>

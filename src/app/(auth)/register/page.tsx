@@ -53,7 +53,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-12">
-      <Card className="w-full max-w-xl border-white/10">
+      <Card className="w-full max-w-xl border-hairline">
         <CardHeader className="space-y-3 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <UserPlus className="h-6 w-6" />
@@ -106,7 +106,7 @@ export default function RegisterPage() {
                 minLength={8}
               />
             </div>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-error">{error}</p>}
             <Button type="submit" className="h-11" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Create Account

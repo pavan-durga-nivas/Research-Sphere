@@ -166,7 +166,7 @@ export default function ValidationPage() {
               />
             </div>
 
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-error">{error}</p>}
 
             <Button className="w-full h-12" onClick={handleValidation} disabled={isScanning || isExtracting}>
               {isScanning ? (
@@ -216,13 +216,13 @@ export default function ValidationPage() {
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-white/10 p-4 text-center">
+                  <div className="rounded-xl border border-hairline p-4 text-center">
                     <p className="text-sm text-muted-foreground">Originality</p>
-                    <p className="text-3xl font-bold text-green-400">{result.originality}%</p>
+                    <p className="text-3xl font-bold text-success">{result.originality}%</p>
                   </div>
-                  <div className="rounded-xl border border-white/10 p-4 text-center">
+                  <div className="rounded-xl border border-hairline p-4 text-center">
                     <p className="text-sm text-muted-foreground">AI Probability</p>
-                    <p className={`text-3xl font-bold ${result.aiProbability > 35 ? "text-red-400" : "text-yellow-300"}`}>
+                    <p className={`text-3xl font-bold ${result.aiProbability > 35 ? "text-error" : "text-warning"}`}>
                       {result.aiProbability}%
                     </p>
                   </div>
@@ -231,7 +231,7 @@ export default function ValidationPage() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Strengths</h4>
                   {result.strengths.map((item, index) => (
-                    <div key={index} className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm">
+                    <div key={index} className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm">
                       {item}
                     </div>
                   ))}
@@ -243,8 +243,8 @@ export default function ValidationPage() {
                     <p className="text-sm text-muted-foreground">No serious issues detected.</p>
                   ) : (
                     result.risks.map((item, index) => (
-                      <div key={index} className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm">
-                        <AlertTriangle className="h-4 w-4 text-yellow-400 mt-0.5" />
+                      <div key={index} className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+                        <AlertTriangle className="h-4 w-4 text-warning mt-0.5" />
                         {item}
                       </div>
                     ))
@@ -254,7 +254,7 @@ export default function ValidationPage() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Action Items</h4>
                   {result.recommendations.map((item, index) => (
-                    <div key={index} className="flex items-start gap-3 rounded-lg border border-white/10 bg-background/70 p-3 text-sm">
+                    <div key={index} className="flex items-start gap-3 rounded-lg border border-hairline bg-background/70 p-3 text-sm">
                       <FileText className="h-4 w-4 mt-0.5 text-primary" />
                       {item}
                     </div>

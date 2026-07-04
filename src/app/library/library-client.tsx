@@ -70,14 +70,14 @@ export function LibraryClient({ initialPapers }: LibraryClientProps) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="glass rounded-xl border border-dashed border-white/10 p-12 text-center text-muted-foreground">
+        <div className="glass rounded-xl border border-dashed border-hairline p-12 text-center text-muted-foreground">
           <BookmarkX className="mx-auto mb-4 h-10 w-10 text-primary/60" />
           <p>No papers match your search. Save papers from Discovery to build your reading list.</p>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {filtered.map((paper) => (
-            <Card key={paper.paperId} className="border-white/10 bg-background/70">
+            <Card key={paper.paperId} className="border-hairline bg-background/70">
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
                   <div>
