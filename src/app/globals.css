@@ -134,7 +134,173 @@ body {
   border-color: color-mix(in srgb, var(--border) 85%, transparent);
 }
 
-.rich-editor,
-.rich-editor * {
-  color: var(--foreground) !important;
+/* ── Rich text editor (TipTap / ProseMirror) content styles ───────────── */
+.prose-editor {
+  color: var(--foreground);
+  font-size: 1rem;
+  line-height: 1.7;
+  outline: none;
+}
+
+.prose-editor :where(p) {
+  margin: 0.6em 0;
+}
+
+.prose-editor :where(h1, h2, h3) {
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.2em 0 0.5em;
+  color: var(--foreground);
+}
+.prose-editor :where(h1) { font-size: 1.9rem; letter-spacing: -0.02em; }
+.prose-editor :where(h2) { font-size: 1.5rem; letter-spacing: -0.01em; }
+.prose-editor :where(h3) { font-size: 1.2rem; }
+
+.prose-editor :where(ul, ol) {
+  margin: 0.6em 0;
+  padding-left: 1.5rem;
+}
+.prose-editor :where(ul) { list-style: disc; }
+.prose-editor :where(ol) { list-style: decimal; }
+.prose-editor :where(li) { margin: 0.2em 0; }
+.prose-editor :where(li) > p { margin: 0.2em 0; }
+
+.prose-editor :where(a) {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.prose-editor :where(blockquote) {
+  border-left: 3px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  margin: 0.9em 0;
+  padding: 0.5em 1em;
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.prose-editor :where(code) {
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.9em;
+}
+.prose-editor :where(pre) {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.85em 1em;
+  margin: 0.9em 0;
+  overflow-x: auto;
+}
+.prose-editor :where(pre code) {
+  background: transparent;
+  padding: 0;
+}
+
+.prose-editor :where(mark) {
+  background: #fff3b0;
+  color: #1a1a1a;
+  border-radius: 3px;
+  padding: 0 0.15em;
+}
+
+.prose-editor :where(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
+}
+
+/* Tables */
+.prose-editor :where(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  overflow: hidden;
+  table-layout: fixed;
+}
+.prose-editor :where(th, td) {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  vertical-align: top;
+  position: relative;
+}
+.prose-editor :where(th) {
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+.prose-editor .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  pointer-events: none;
+}
+.prose-editor .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--primary);
+  cursor: col-resize;
+}
+
+/* Resizable images */
+.prose-editor .editor-image { display: block; margin: 0.9em 0; }
+.prose-editor .editor-image__frame { position: relative; display: inline-block; max-width: 100%; }
+.prose-editor .editor-image__img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  display: block;
+}
+.prose-editor .editor-image__img.is-selected {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.prose-editor .editor-image__handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--primary);
+  background: var(--background);
+  border-radius: 3px;
+  cursor: nwse-resize;
+}
+
+/* Multi-column layout */
+.prose-editor .editor-columns {
+  display: grid;
+  grid-template-columns: repeat(var(--editor-cols, 2), minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0.9em 0;
+}
+.prose-editor .editor-column {
+  border: 1px dashed var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 0;
+}
+
+/* Placeholder (empty document) */
+.prose-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Selection + gap cursor */
+.prose-editor ::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+.prose-editor .ProseMirror-gapcursor:after {
+  border-top-color: var(--foreground);
 }
