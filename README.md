@@ -17,6 +17,7 @@ Research-Sphere is a full-stack [Next.js](https://nextjs.org) application that b
 - [Features](#features)
 - [Tech stack](#tech-stack)
 - [Project structure](#project-structure)
+- [Architecture](#architecture)
 - [Getting started](#getting-started)
 - [Environment variables](#environment-variables)
 - [Available scripts](#available-scripts)
@@ -83,6 +84,12 @@ src/
 scripts/
 └── migrate-json-to-mongo.mjs # one-off JSON → MongoDB migration
 ```
+
+## Architecture
+
+System overview, key design decisions (storage backend, auth token design,
+editor choice, the collaboration overwrite guard), and their tradeoffs are
+recorded as short ADR entries in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Getting started
 
